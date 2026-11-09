@@ -27,6 +27,14 @@
                 <RowDefinition Height="Auto" />
             </Grid.RowDefinitions>
 
+            <!-- 内容层：跟主工程一样，淡入淡出只作用在这一层 -->
+            <Grid x:Name="ContentLayer" Grid.RowSpan="3">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="*" />
+                    <RowDefinition Height="Auto" />
+                </Grid.RowDefinitions>
+
             <!-- 头部（跟主工程 MainWindow.xaml 保持一致） -->
             <Grid Margin="14,12,14,0">
                 <Grid.ColumnDefinitions>
@@ -181,6 +189,7 @@
                             Content="{DynamicResource Ui.Log.Button}" Height="24" Padding="9,0" FontSize="10.5" />
                 </Grid>
             </Border>
+            </Grid>
         </Grid>
     </Border>
 </Window>

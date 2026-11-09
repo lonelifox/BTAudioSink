@@ -29,8 +29,12 @@ public static class FlyoutPlacement
     /// <summary>弹窗与工作区边缘的间距。</summary>
     public const double Gap = 12;
 
-    /// <summary>滑入/滑出的位移。太大像飞，太小看不出从任务栏里出来。</summary>
-    public const double FlyDistance = 36;
+    /// <summary>
+    /// 滑入/滑出的位移。太大像飞，太小看不出从任务栏里出来。
+    /// 48 是配合 <see cref="FlyoutMotion"/> 的过冲曲线定的：曲线本身越过终点约 9.7%，
+    /// 36 DIP 时那点过冲摊下来不到 2px，肉眼看不出来，等于白用。
+    /// </summary>
+    public const double FlyDistance = 48;
 
     /// <summary>
     /// 工作区相对整屏缩进最多的那条边就是任务栏。
