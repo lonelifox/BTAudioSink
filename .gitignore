@@ -1,0 +1,44 @@
+# Build
+bin/
+obj/
+publish/
+publish-sc/
+publish-standalone/
+publish-installer/
+*.user
+*.suo
+
+# 发布压缩包：由 GitHub Actions 现场打包，不进版本库
+BTAudioSink-win-x64*.zip
+
+# 安装器编译产物：由 Inno Setup 现场生成
+installer/output/
+
+# Visual Studio / Rider
+.vs/
+.idea/
+*.DotSettings.user
+
+# 发布产物
+*.exe
+*.dll
+*.pdb
+*.deps.json
+*.runtimeconfig.json
+
+# 系统
+Thumbs.db
+desktop.ini
+.DS_Store
+
+# 图标调试用的临时预览
+_icon_preview/
+
+# 离屏预览工程的产物（截图和断言日志）。
+# 源码要入库——CI 靠它核对与主工程的界面是否同步。
+_ui_preview/**/*.png
+_ui_preview/frames/
+
+# git bundle 备份文件。用 `git bundle create` 存历史时会落在仓库根，
+# 它本身是 .git 的副本，绝不能再进版本库。
+*.bundle

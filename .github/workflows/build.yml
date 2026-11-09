@@ -1,0 +1,163 @@
+﻿name: Build
+
+on:
+  push:
+    branches: [ main ]
+    tags: [ 'v*' ]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '9.0.x'
+
+      # 体检脚本是 Python 写的。windows runner 虽然预装了 Python，
+      # 但不保证 PATH 上就有 `python` 这个名字（可能是 python3 或者在别处），
+      # 显式装一次最省心——脚本挂掉会连带把整个 build 判失败。
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Restore
+        run: dotnet restore BTAudioSink.csproj
+
+      - name: Build
+        run: dotnet build BTAudioSink.csproj -c Release --no-restore
+
+      # 文案表体检：中文表/英文表必须一一对应，XAML 和代码引用的键必须都存在。
+      # 漏一条英文翻译，英文界面就会直接显示键名——这个坑要在提交时就挡住。
+      - name: Check localization tables
+        run: python tools/check_loc.py .
+
+      # 离屏预览工程是主界面 XAML 的手工复制品。两边不同步，
+      # 离屏量出来的宽度就是假的（英文文案挤压就是这么漏掉的）。
+      # 这个检查把「复制品保持同步」变成机器可判定的事。
+      - name: Check preview/main UI sync
+        run: python tools/check_preview_sync.py .
+
+      # 顺带编译一遍预览工程：它引用主工程的 Theme/Loc，
+      # 那些引用路径写错了，只有真编译才会暴露。
+      - name: Build preview harness
+        run: dotnet build _ui_preview/Preview.csproj -c Release
+
+      - name: Publish
+        run: dotnet publish BTAudioSink.csproj -c Release -r win-x64 --self-contained false -o publish
+
+      - name: Publish (standalone)
+        run: dotnet publish BTAudioSink.csproj -c Release -r win-x64 --self-contained true -o publish-standalone
+
+      # 安装器用的发布目录。自包含 + 免运行时：装完就能跑，
+      # 不用用户自己去装 .NET 运行时。
+      - name: Publish (installer payload)
+        run: dotnet publish BTAudioSink.csproj -c Release -r win-x64 --self-contained true -p:DebugType=none -p:DebugSymbols=false -o publish-installer
+
+      # 本项目不做代码签名，原因见 docs/SIGNING.md。
+      # 若以后要加：签名必须发生在这之前——先签 publish-installer/ 里的 exe 和 dll，
+      # 再让 Inno Setup 打包，顺序反了等于没签。
+      #
+      # windows-latest 镜像自带 Inno Setup 6，装配这一步不用额外装东西。
+      - name: Build installer
+        run: |
+          # runner 上装在 Program Files (x86)，但也兼容装在用户目录的情况，
+          # 两个位置都找一遍，找不到才报错。
+          $candidates = @(
+            "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe",
+            "${env:ProgramFiles}\Inno Setup 6\ISCC.exe",
+            "${env:LOCALAPPDATA}\Programs\Inno Setup 6\ISCC.exe"
+          )
+          $iscc = $candidates | Where-Object { Test-Path $_ } | Select-Object -First 1
+          if (-not $iscc) { throw "Inno Setup 编译器未找到，已尝试: $($candidates -join ', ')" }
+          Write-Host "使用编译器: $iscc"
+          & $iscc installer\BTAudioSink.iss
+          if ($LASTEXITCODE -ne 0) { throw "ISCC 编译失败" }
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: BTAudioSink-win-x64
+          path: publish/
+
+      - name: Upload artifact (standalone)
+        uses: actions/upload-artifact@v4
+        with:
+          name: BTAudioSink-win-x64-standalone
+          path: publish-standalone/
+
+      - name: Upload artifact (installer)
+        uses: actions/upload-artifact@v4
+        with:
+          name: BTAudioSink-installer
+          path: installer/output/
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      # 用仓库里手写的发布说明当 release 正文。
+      # auto-generated 的 notes 只是把 commit 标题罗列一遍，
+      # 对普通用户没有意义——他们要看的是「下载哪个包、装完怎么用」。
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: BTAudioSink-win-x64
+          path: publish
+
+      - name: Download artifact (standalone)
+        uses: actions/download-artifact@v4
+        with:
+          name: BTAudioSink-win-x64-standalone
+          path: publish-standalone
+
+      - name: Download artifact (installer)
+        uses: actions/download-artifact@v4
+        with:
+          name: BTAudioSink-installer
+          path: installer-output
+
+      - name: Package
+        run: |
+          # 调试符号对普通用户没用，还会白白撑大压缩包。
+          rm -f publish/*.pdb publish-standalone/*.pdb
+          cd publish && zip -r ../BTAudioSink-win-x64.zip .
+          cd ../publish-standalone && zip -r ../BTAudioSink-win-x64-standalone.zip .
+
+      # 没有代码签名时，哈希是用户唯一能自己做的完整性校验。
+      # 安装器那行单独 cd 进去算，否则哈希表里会带上 installer-output/ 前缀，
+      # 用户对着文件名找的时候容易看错。
+      - name: Checksums
+        run: |
+          # --tag 输出成 `SHA256 (文件名) = 哈希`，比裸哈希好对照，
+          # 也仍然能被 sha256sum -c 校验。
+          sha256sum --tag BTAudioSink-win-x64.zip BTAudioSink-win-x64-standalone.zip > SHA256SUMS.txt
+          (cd installer-output && sha256sum --tag *.exe) >> SHA256SUMS.txt
+          cat SHA256SUMS.txt
+
+      - name: Create release
+        uses: softprops/action-gh-release@v2
+        with:
+          # 按 tag 名找对应的发布说明，别再写死 v1.0.0——
+          # 写死的话下一个版本发布出去，正文还是 v1.0.0 的。
+          # 文件不存在会直接失败，正好逼着发版前把说明写好。
+          body_path: RELEASE_NOTES_${{ github.ref_name }}.md
+          # 重跑同一 tag 时覆盖同名资产，而不是报 409 或堆出 "xxx (1)"。
+          overwrite_files: true
+          fail_on_unmatched_files: false
+          files: |
+            BTAudioSink-win-x64.zip
+            BTAudioSink-win-x64-standalone.zip
+            installer-output/BTAudioSink-Setup-*.exe
+            SHA256SUMS.txt

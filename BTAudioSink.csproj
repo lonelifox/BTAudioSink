@@ -1,0 +1,56 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net9.0-windows10.0.19041.0</TargetFramework>
+    <SupportedOSPlatformVersion>10.0.19041.0</SupportedOSPlatformVersion>
+    <Nullable>enable</Nullable>
+    <UseWPF>true</UseWPF>
+    <UseWindowsForms>true</UseWindowsForms>
+    <!-- 高 DPI：PerMonitorV2，换到不同缩放的显示器上界面会按新 DPI 重排而不是被放大糊掉 -->
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <!--
+        WinForms 分析器会建议「别在清单里写 DPI，改用 ApplicationHighDpiMode」——
+        那是 WinForms 自己的入口方式。这程序是 WPF 应用，WinForms 只用来拿屏幕/托盘图标，
+        清单才是 WPF 声明 PerMonitorV2 的唯一正确位置，所以把这条建议关掉。
+    -->
+    <NoWarn>$(NoWarn);WFO0003</NoWarn>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <RootNamespace>BTAudioSink</RootNamespace>
+    <AssemblyName>BTAudioSink</AssemblyName>
+
+    <!-- 程序集信息，GitHub Release 与文件属性里会显示 -->
+    <AssemblyTitle>BTAudioSink</AssemblyTitle>
+    <Product>BTAudioSink</Product>
+    <Description>把 Windows 电脑变成蓝牙音频接收端，支持多台设备同时连接</Description>
+    <Company>HB</Company>
+    <Copyright>Copyright © 2026</Copyright>
+    <Version>1.0.0</Version>
+    <AssemblyVersion>1.0.0.0</AssemblyVersion>
+    <FileVersion>1.0.0.0</FileVersion>
+
+    <ApplicationIcon>Assets\app.ico</ApplicationIcon>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Resource Include="Assets\logo.png" />
+    <!-- exe 图标要能被 GetResourceStream 读到，才能给任务栏塞精确尺寸的帧 -->
+    <Resource Include="Assets\app.ico" />
+  </ItemGroup>
+
+  <!--
+    离屏预览工程（_ui_preview）放在仓库里，是为了让 CI 能核对
+    它和主界面的 XAML 是否同步。但 SDK 风格的工程默认会递归把子目录里的
+    .cs 全部纳入编译，预览工程 obj/ 下生成的 AssemblyInfo 也会被扫进来，
+    结果是主工程报「AssemblyCompanyAttribute 特性重复」。
+    这里把预览工程整个排除掉——它是独立工程，有自己的 csproj。
+  -->
+  <ItemGroup>
+    <Compile Remove="_ui_preview\**" />
+    <Page Remove="_ui_preview\**" />
+    <Resource Remove="_ui_preview\**" />
+    <ApplicationDefinition Remove="_ui_preview\**" />
+    <None Remove="_ui_preview\**" />
+  </ItemGroup>
+
+</Project>

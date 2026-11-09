@@ -1,0 +1,257 @@
+﻿    <!--
+        尺寸全部用 DIP（WPF 的默认单位，1 DIP = 1/96 英寸），
+        在 125% / 150% / 200% 缩放下由系统换算成物理像素，字号、行高、间距一起等比放大，
+        所以这里写死数值不会在高 DPI 下变小或错位。
+        窗口高度固定、不再跟着内容走：设备一增删窗口不跳，列表自己滚动。
+        （app.manifest 里声明了 PerMonitorV2，换到不同缩放比的显示器上也不会糊。）
+    -->
+    <Window x:Class="BTAudioSink.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:b="clr-namespace:BTAudioSink.Behaviors"
+        Title="BTAudioSink"
+        Icon="Assets/app.ico"
+        Width="384"
+        Height="330"
+        WindowStyle="None" ResizeMode="NoResize"
+        WindowStartupLocation="Manual"
+        ShowInTaskbar="False" Topmost="True"
+        Background="Transparent"
+        FontFamily="Microsoft YaHei UI, Segoe UI"
+        TextOptions.TextFormattingMode="Display"
+        UseLayoutRounding="True">
+
+    <!-- 托盘弹窗：没有标题栏按钮，点外面就收回 -->
+    <WindowChrome.WindowChrome>
+        <WindowChrome CaptionHeight="0" ResizeBorderThickness="0"
+                      GlassFrameThickness="0" CornerRadius="0"
+                      UseAeroCaptionButtons="False" />
+    </WindowChrome.WindowChrome>
+
+    <Grid x:Name="RootLayout">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <!-- 中间这行吃掉剩余高度：设备多了就在这里滚动，窗口本身不动 -->
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <!-- 底色层。开 Mica 时整层隐藏，让系统材质透上来。 -->
+        <Border x:Name="BackdropLayer" Grid.RowSpan="3"
+                Background="{DynamicResource WindowBgBrush}" />
+
+        <!--
+            头部：图标 + 标题 + 连接数 + 刷新。
+
+            右边距 14，跟下面的设备列表、底栏分割线同一条竖线，
+            刷新按钮的右边缘因此正好压在列表右边框上（不是浮在外面）。
+        -->
+        <Grid Grid.Row="0" Margin="14,12,14,0">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+
+            <Image Source="Assets/logo.png" Width="18" Height="18"
+                   RenderOptions.BitmapScalingMode="HighQuality"
+                   VerticalAlignment="Center" />
+
+            <TextBlock Grid.Column="1" Text="BTAudioSink" Margin="8,0,0,0"
+                       FontSize="12.5" FontWeight="SemiBold"
+                       Foreground="{DynamicResource TextPrimaryBrush}"
+                       VerticalAlignment="Center" />
+
+            <!-- 连接数紧挨软件名右边，中间用弹性列把它和刷新按钮推开 -->
+            <TextBlock Grid.Column="2" x:Name="BadgeText" Text="{DynamicResource Ui.Badge.None}"
+                       Margin="7,0,0,0" FontSize="11"
+                       VerticalAlignment="Center"
+                       Foreground="{DynamicResource TextTertiaryBrush}" />
+
+            <Button Grid.Column="4" x:Name="RefreshButton" Style="{StaticResource IconButton}"
+                    Content="&#xE72C;" Width="26" Height="26"
+                    ToolTip="{DynamicResource Ui.RefreshTip}" Click="OnRefreshClick" />
+        </Grid>
+
+        <!--
+            设备列表。窗口高度固定，多了就在这里滚。
+
+            右边距 8 不是 14：右边要留出 6px 给悬浮滚动条（见 Styles.xaml 的
+            OverlayScrollViewer），加上外边距一共 14，和上下两处的边距对得上。
+            卡片右边缘因此永远落在 370 这一条竖线上。
+        -->
+        <Grid Grid.Row="1" Margin="14,10,8,0">
+            <TextBlock x:Name="EmptyHint" Visibility="Collapsed"
+                       Text="{DynamicResource Ui.Empty}"
+                       FontSize="11.5" LineHeight="20"
+                       Foreground="{DynamicResource TextSecondaryBrush}"
+                       TextAlignment="Center" VerticalAlignment="Center"
+                       HorizontalAlignment="Center" />
+
+            <ListBox x:Name="DeviceList"
+                     Background="Transparent" BorderThickness="0"
+                     FocusVisualStyle="{x:Null}"
+                     ItemContainerStyle="{StaticResource DeviceListItem}"
+                     b:RowClickToggle.CollapseSelectedOnClick="True"
+                     SelectionMode="Single"
+                     ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                     ScrollViewer.VerticalScrollBarVisibility="Auto"
+                     VirtualizingPanel.ScrollUnit="Pixel">
+                <ListBox.Resources>
+                    <!--
+                        列表内部的 ScrollViewer 换成悬浮滚动条：
+                        默认滚动条会占掉 8px 宽度，卡片右边就比底栏分割线短一截。
+                        只在这个 ListBox 作用域里替换，不影响日志抽屉里的那个。
+                    -->
+                    <Style TargetType="ScrollViewer" BasedOn="{StaticResource OverlayScrollViewer}" />
+                </ListBox.Resources>
+                <ListBox.ItemTemplate>
+                    <DataTemplate>
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                            </Grid.RowDefinitions>
+
+                            <Ellipse Grid.RowSpan="2" Width="7" Height="7" VerticalAlignment="Center">
+                                <Ellipse.Style>
+                                    <Style TargetType="Ellipse">
+                                        <Setter Property="Fill" Value="{DynamicResource TextTertiaryBrush}" />
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding IsConnected}" Value="True">
+                                                <Setter Property="Fill" Value="{DynamicResource SuccessBrush}" />
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </Ellipse.Style>
+                            </Ellipse>
+
+                            <TextBlock Grid.Column="1" Text="{Binding Name}" Margin="10,0,4,0"
+                                       FontSize="12.5" FontWeight="Medium"
+                                       Foreground="{DynamicResource TextPrimaryBrush}"
+                                       TextTrimming="CharacterEllipsis"
+                                       ToolTip="{Binding Name}" />
+
+                            <TextBlock Grid.Column="1" Grid.Row="1" Text="{Binding StatusText}"
+                                       Margin="10,2,4,0" FontSize="11"
+                                       Foreground="{DynamicResource TextSecondaryBrush}"
+                                       TextTrimming="CharacterEllipsis" />
+
+                            <StackPanel Grid.Column="2" Grid.RowSpan="2"
+                                        Orientation="Horizontal" VerticalAlignment="Center">
+                                <CheckBox Style="{StaticResource DeviceToggleChip}"
+                                          Content="{DynamicResource Ui.Device.Auto}"
+                                          IsChecked="{Binding IsAutoReconnect, Mode=TwoWay}"
+                                          ToolTip="{DynamicResource Ui.Device.AutoTip}" />
+                                <Button Content="{DynamicResource Ui.Device.Reconnect}"
+                                        Style="{StaticResource DeviceSecondaryChip}"
+                                        Margin="6,0,0,0"
+                                        Tag="{Binding}" Click="OnReconnectClick"
+                                        ToolTip="{DynamicResource Ui.Device.ReconnectTip}" />
+                                <Button Content="{Binding ActionText}"
+                                        Style="{StaticResource DeviceActionButton}"
+                                        Margin="6,0,0,0"
+                                        Tag="{Binding}" Click="OnRowActionClick"
+                                        ToolTip="{DynamicResource Ui.Device.ActionTip}" />
+                            </StackPanel>
+
+                            <!--
+                                点中这一行才展开的详情。数据在选中时向系统现查，不缓存。
+                                ClipToBounds 必须有：展开动画是压着 MaxHeight 长高的，
+                                内容按真实高度排，超出当前高度的部分得裁掉，而不是溢出到下一行。
+                            -->
+                            <Border Grid.Row="2" Grid.ColumnSpan="3" Margin="0,9,0,0" Padding="0,9,0,0"
+                                    BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,1,0,0"
+                                    ClipToBounds="True" Visibility="Collapsed"
+                                    b:RevealBehavior.IsRevealed="{Binding IsSelected, RelativeSource={RelativeSource AncestorType=ListBoxItem}}">
+
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto" />
+                                        <RowDefinition Height="Auto" />
+                                    </Grid.RowDefinitions>
+
+                                    <StackPanel Grid.Row="0" Grid.Column="0" Margin="0,0,10,8">
+                                        <TextBlock Text="{DynamicResource Ui.Detail.Address}" FontSize="10"
+                                                   Foreground="{DynamicResource TextTertiaryBrush}" />
+                                        <TextBlock Text="{Binding AddressText}" FontSize="11" Margin="0,2,0,0"
+                                                   FontFamily="Cascadia Mono, Consolas, monospace"
+                                                   Foreground="{DynamicResource TextPrimaryBrush}" />
+                                    </StackPanel>
+
+                                    <StackPanel Grid.Row="0" Grid.Column="1" Margin="0,0,0,8">
+                                        <TextBlock Text="{DynamicResource Ui.Detail.Link}" FontSize="10"
+                                                   Foreground="{DynamicResource TextTertiaryBrush}" />
+                                        <TextBlock Text="{Binding LinkText}" FontSize="11" Margin="0,2,0,0"
+                                                   Foreground="{DynamicResource TextPrimaryBrush}" />
+                                    </StackPanel>
+
+                                    <StackPanel Grid.Row="1" Grid.Column="0" Margin="0,0,10,0">
+                                        <TextBlock Text="{DynamicResource Ui.Detail.Rssi}" FontSize="10"
+                                                   Foreground="{DynamicResource TextTertiaryBrush}" />
+                                        <TextBlock Text="{Binding RssiText}" FontSize="11" Margin="0,2,0,0"
+                                                   Foreground="{DynamicResource TextPrimaryBrush}" />
+                                    </StackPanel>
+
+                                    <StackPanel Grid.Row="1" Grid.Column="1">
+                                        <TextBlock Text="{DynamicResource Ui.Detail.Type}" FontSize="10"
+                                                   Foreground="{DynamicResource TextTertiaryBrush}" />
+                                        <TextBlock Text="{Binding DeviceTypeText}" FontSize="11" Margin="0,2,0,0"
+                                                   Foreground="{DynamicResource TextPrimaryBrush}" />
+                                    </StackPanel>
+                                </Grid>
+                            </Border>
+                        </Grid>
+                    </DataTemplate>
+                </ListBox.ItemTemplate>
+            </ListBox>
+
+        </Grid>
+
+        <!-- 底栏：日常只露最新一条日志，右边「日志」按钮用默认编辑器打开日志文件 -->
+        <Border Grid.Row="2" Margin="14,8,14,12"
+                BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,1,0,0"
+                Padding="0,8,0,0">
+            <Grid Height="30">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+
+                <!--
+                    最新一条日志：留两行。
+
+                    单行放不下——「蓝牙链路未建立，尝试通过音频连接唤醒设备（1/3）…」这类
+                    完整句子有二十多个字，一行只能显示一半，还得靠省略号吊着。
+                    两行（LineHeight 15 × 2）刚好能放下一整句，超出的部分才截断。
+                    完整历史在 %APPDATA%\BTAudioSink\log.txt，点右边的按钮打开。
+                -->
+                <TextBlock x:Name="LastLogText" Text="{DynamicResource Ui.Log.Ready}" FontSize="10.5"
+                           Foreground="{DynamicResource TextTertiaryBrush}"
+                           VerticalAlignment="Center" Margin="0,0,8,0"
+                           TextWrapping="Wrap"
+                           LineHeight="15" LineStackingStrategy="BlockLineHeight"
+                           MaxHeight="30"
+                           TextTrimming="CharacterEllipsis" />
+
+                <Button x:Name="LogButton" Grid.Column="1"
+                        Style="{StaticResource DeviceSecondaryChip}"
+                        Content="{DynamicResource Ui.Log.Button}" Height="24" Padding="9,0" FontSize="10.5"
+                        Click="OnLogButtonClick"
+                        ToolTip="{DynamicResource Ui.Log.Tip}" />
+            </Grid>
+        </Border>
+    </Grid>
+</Window>

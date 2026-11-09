@@ -1,0 +1,18 @@
+# 统一换行，避免 Windows 上提交后 GitHub 显示整文件改动
+* text=auto
+
+*.cs      text diff=csharp
+*.xaml    text
+*.csproj  text
+*.md      text
+*.yml     text eol=lf
+*.json    text
+
+# Python 脚本明确用 LF。CI 上跑的是这些脚本，
+# 换行符不一致会在不同平台上产生莫名其妙的行为差异。
+*.py      text eol=lf
+
+*.png     binary
+*.ico     binary
+*.exe     binary
+*.dll     binary

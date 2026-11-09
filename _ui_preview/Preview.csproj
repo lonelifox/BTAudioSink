@@ -1,0 +1,27 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net9.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <Nullable>disable</Nullable>
+    <AssemblyName>Preview</AssemblyName>
+    <RootNamespace>Preview</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="..\Behaviors\RevealBehavior.cs" Link="Behaviors\RevealBehavior.cs" />
+    <Compile Include="..\Behaviors\RowClickToggle.cs" Link="Behaviors\RowClickToggle.cs" />
+    <!-- 复用主工程的语言资源，离屏出的图才是真的界面，不是另画一遍 -->
+    <Compile Include="..\Services\Loc.cs" Link="Services\Loc.cs" />
+    <Page Include="..\Theme\Light.xaml" Link="Theme\Light.xaml" />
+    <Page Include="..\Theme\Dark.xaml" Link="Theme\Dark.xaml" />
+    <Page Include="..\Theme\Styles.xaml" Link="Theme\Styles.xaml" />
+  </ItemGroup>
+
+  <!-- Loc.cs 带可空标注，本工程没开可空检查，关掉这条告警 -->
+  <PropertyGroup>
+    <NoWarn>$(NoWarn);CS8632</NoWarn>
+  </PropertyGroup>
+
+</Project>
