@@ -27,12 +27,12 @@ dotnet run
 发布成可以直接分发的目录：
 
 ```bash
-# 依赖系统 .NET 运行时
-dotnet publish -c Release -r win-x64 --self-contained false -o publish
-
-# 自带运行时，对方不用装 .NET
+# 自带运行时，对方不用装 .NET（绿色包）
 dotnet publish -c Release -r win-x64 --self-contained true -o publish-standalone
 ```
+
+> 不再出「依赖系统 .NET 运行时」的精简包：多要求用户装一次运行时，
+> 对一个双击就要能用的小工具来说不划算。
 
 ## 打包安装程序
 
@@ -149,8 +149,8 @@ python tools/check_preview_sync.py . # 预览工程与主界面是否同步
 `.github/workflows/build.yml`，push 到 main 和打 tag 都跑：
 
 1. 还原 + 构建 + 两个体检脚本 + 预览工程编译
-2. 三次 publish（精简 / 绿色 / 安装器负载）
+2. 两次 publish（绿色 / 安装器负载）
 3. 编译安装器
-4. 打 tag 时额外建 Release 并上传三个附件，正文取 `RELEASE_NOTES_<tag>.md`
+4. 打 tag 时额外建 Release 并上传两个附件，正文取 `RELEASE_NOTES_<tag>.md`
 
 **发版流程**：准备好 `RELEASE_NOTES_vX.Y.Z.md` → 提交 → 打注解 tag `vX.Y.Z` 推上去 → CI 自己构建并发布。

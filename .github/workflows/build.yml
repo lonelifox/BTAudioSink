@@ -48,9 +48,9 @@ jobs:
       - name: Build preview harness
         run: dotnet build _ui_preview/Preview.csproj -c Release
 
-      - name: Publish
-        run: dotnet publish BTAudioSink.csproj -c Release -r win-x64 --self-contained false -o publish
-
+      # 只出自包含的包：绿色包和安装器都自带运行时，用户装完/解压完就能跑。
+      # 依赖系统 .NET 的精简包曾经存在过，但要求用户先去装运行时，
+      # 对一个「双击就能用」的小工具来说是净负担，2026-11-09 起不再维护。
       - name: Publish (standalone)
         run: dotnet publish BTAudioSink.csproj -c Release -r win-x64 --self-contained true -o publish-standalone
 
@@ -79,12 +79,6 @@ jobs:
           & $iscc installer\BTAudioSink.iss
           if ($LASTEXITCODE -ne 0) { throw "ISCC 编译失败" }
 
-      - name: Upload artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: BTAudioSink-win-x64
-          path: publish/
-
       - name: Upload artifact (standalone)
         uses: actions/upload-artifact@v4
         with:
@@ -110,12 +104,6 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Download artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: BTAudioSink-win-x64
-          path: publish
-
       - name: Download artifact (standalone)
         uses: actions/download-artifact@v4
         with:
@@ -131,9 +119,8 @@ jobs:
       - name: Package
         run: |
           # 调试符号对普通用户没用，还会白白撑大压缩包。
-          rm -f publish/*.pdb publish-standalone/*.pdb
-          cd publish && zip -r ../BTAudioSink-win-x64.zip .
-          cd ../publish-standalone && zip -r ../BTAudioSink-win-x64-standalone.zip .
+          rm -f publish-standalone/*.pdb
+          cd publish-standalone && zip -r ../BTAudioSink-win-x64-standalone.zip .
 
       # 没有代码签名时，哈希是用户唯一能自己做的完整性校验。
       # 安装器那行单独 cd 进去算，否则哈希表里会带上 installer-output/ 前缀，
@@ -142,7 +129,7 @@ jobs:
         run: |
           # --tag 输出成 `SHA256 (文件名) = 哈希`，比裸哈希好对照，
           # 也仍然能被 sha256sum -c 校验。
-          sha256sum --tag BTAudioSink-win-x64.zip BTAudioSink-win-x64-standalone.zip > SHA256SUMS.txt
+          sha256sum --tag BTAudioSink-win-x64-standalone.zip > SHA256SUMS.txt
           (cd installer-output && sha256sum --tag *.exe) >> SHA256SUMS.txt
           cat SHA256SUMS.txt
 
@@ -157,7 +144,6 @@ jobs:
           overwrite_files: true
           fail_on_unmatched_files: false
           files: |
-            BTAudioSink-win-x64.zip
             BTAudioSink-win-x64-standalone.zip
             installer-output/BTAudioSink-Setup-*.exe
             SHA256SUMS.txt

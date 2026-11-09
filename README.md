@@ -31,7 +31,6 @@ Windows 其实早就内置了这个能力（`AudioPlaybackConnection`，Win10 20
 |---|---|---|
 | `BTAudioSink-Setup-<版本>-x64.exe` | 约 54 MB | **推荐。** 双击安装，免管理员权限、不弹 UAC，控制面板可正常卸载 |
 | `BTAudioSink-win-x64-standalone.zip` | 约 76 MB | 免安装，解压即用。适合放在 U 盘里带走 |
-| `BTAudioSink-win-x64.zip` | 约 6 MB | 精简版。需要自己先装 [.NET 9 Desktop Runtime](https://dotnet.microsoft.com/download/dotnet/9.0) |
 
 > **首次运行会弹「Windows 已保护你的电脑」？**
 >
@@ -60,7 +59,7 @@ Windows 其实早就内置了这个能力（`AudioPlaybackConnection`，Win10 20
 | 项目 | 要求 |
 |---|---|
 | 操作系统 | Windows 10 2004（build 19041）或更高 |
-| 运行时 | 安装包与绿色包**不需要**；精简包需 [.NET 9 Desktop Runtime](https://dotnet.microsoft.com/download/dotnet/9.0) |
+| 运行时 | 不需要。安装包和绿色包都自带 .NET 运行时 |
 | 蓝牙适配器 | 需支持 A2DP Sink 角色（绝大多数内置和 USB 适配器都支持） |
 
 圆角与 Mica 需要 Windows 11；Win10 上会自动降级为直角实色窗口，功能不受影响。

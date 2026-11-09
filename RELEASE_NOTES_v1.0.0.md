@@ -8,7 +8,6 @@
 |---|---|---|
 | `BTAudioSink-Setup-1.0.0-x64.exe` | 约 55 MB | 安装版，双击安装，免管理员权限，中文安装向导 |
 | `BTAudioSink-win-x64-standalone.zip` | 约 74 MB | 免安装绿色版，解压即用，适合放 U 盘 |
-| `BTAudioSink-win-x64.zip` | 约 6 MB | 精简版，需要先装 [.NET 9 Desktop Runtime](https://dotnet.microsoft.com/download/dotnet/9.0) |
 
 安装版装到 `%LOCALAPPDATA%\Programs\BTAudioSink`，不需要管理员权限、不弹 UAC；开始菜单有入口，控制面板里能正常卸载。安装时可勾选「创建桌面快捷方式」和「开机自动启动」（后者默认不勾）。
 
