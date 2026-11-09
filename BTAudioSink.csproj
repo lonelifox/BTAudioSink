@@ -25,9 +25,9 @@
     <Description>把 Windows 电脑变成蓝牙音频接收端，支持多台设备同时连接</Description>
     <Company>HB</Company>
     <Copyright>Copyright © 2026</Copyright>
-    <Version>1.0.0</Version>
-    <AssemblyVersion>1.0.0.0</AssemblyVersion>
-    <FileVersion>1.0.0.0</FileVersion>
+    <Version>1.1.0</Version>
+    <AssemblyVersion>1.1.0.0</AssemblyVersion>
+    <FileVersion>1.1.0.0</FileVersion>
 
     <ApplicationIcon>Assets\app.ico</ApplicationIcon>
   </PropertyGroup>

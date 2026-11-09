@@ -9,7 +9,7 @@
 ; 依赖：publish-installer 目录（由 dotnet publish 生成，见 README）
 
 #define AppName "BTAudioSink"
-#define AppVersion "1.0.0"
+#define AppVersion "1.1.0"
 #define AppPublisher "HB"
 #define AppExeName "BTAudioSink.exe"
 #define AppUrl "https://github.com/lonelifox/BTAudioSink"
