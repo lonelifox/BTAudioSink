@@ -1038,7 +1038,6 @@ public partial class MainWindow : Window
         _flyCompleted = completed;
 
         _flyClock ??= new System.Diagnostics.Stopwatch();
-        _flyClock.Reset();
 
         // 起手先摆到起点，别让窗口停在上一段的残位上闪一下。
         PlaceWindow(fromLeft, fromTop);
@@ -1115,9 +1114,9 @@ public partial class MainWindow : Window
 
         if (_flyAbort || generation != _flyGeneration) return;
 
-        _dbgFrames = frames;
-        _dbgGapSum = gapSum;
-        _dbgGapMax = gapMax;
+        _frameCount = frames;
+        _frameGapSum = gapSum;
+        _frameGapMax = gapMax;
 
         // 与上面的帧同一个队列、同一优先级，排在所有帧之后执行。
         Dispatcher.BeginInvoke(DispatcherPriority.Send, new Action(CompleteFlyout));
@@ -1136,8 +1135,8 @@ public partial class MainWindow : Window
         _liveTop = top;
 
         var ms = work.Elapsed.TotalMilliseconds;
-        _dbgWorkSum += ms;
-        if (ms > _dbgWorkMax) _dbgWorkMax = ms;
+        _placeCostSum += ms;
+        if (ms > _placeCostMax) _placeCostMax = ms;
     }
 
     /// <summary>
@@ -1149,7 +1148,7 @@ public partial class MainWindow : Window
         if (DwmFlush() != 0) Thread.Sleep(4);
     }
 
-    /// <summary>动画收尾，回到 UI 线程：同步 WPF 的 Left/Top、记诊断、触发完成回调。</summary>
+    /// <summary>动画收尾，回到 UI 线程：同步 WPF 的 Left/Top、做掉帧自检、触发完成回调。</summary>
     private void CompleteFlyout()
     {
         var done = _flyCompleted;
@@ -1161,39 +1160,46 @@ public partial class MainWindow : Window
         Top = endTop;
         PlaceWindow(endLeft, endTop);
 
-        DebugFrameReport();
+        ReportFrameStalls();
         StopFlyAnimation();
         done?.Invoke();
     }
 
-    // ---------- 临时诊断：动画节拍与摆位耗时（诊断完删掉） ----------
-    private int _dbgFrames;
-    private double _dbgGapSum;
-    private double _dbgGapMax;
-    private double _dbgWorkSum;
-    private double _dbgWorkMax;
+    // ---------- 掉帧自检 ----------
+    // 段内累计的帧数与耗时，只用于判断「这一趟是不是卡了」，不参与渲染。
+
+    private int _frameCount;
+    private double _frameGapSum;
+    private double _frameGapMax;
+    private double _placeCostSum;
+    private double _placeCostMax;
 
     /// <summary>
-    /// 只在「某一帧明显迟到」时记一笔。正常情况下一声不响——用户日志里不该有每弹一次窗口
-    /// 就多一行的噪声；真出现卡顿则留下证据，不用再靠肉眼判断。
+    /// 一段动画结束时判断有没有掉帧，掉了才记一行，正常一声不响。
+    ///
+    /// 用户日志里不该有「每弹一次窗口就多一行」的噪声，但真卡了要留下可核对的数字，
+    /// 省得再靠肉眼争论「是不是有点顿」。阈值取 12ms：165Hz 屏正常间隔 6.1ms，
+    /// 60Hz 屏 16.7ms，12ms 落在两者之间——只有明显跨过一帧以上才算掉。
     /// </summary>
-    private void DebugFrameReport()
+    private void ReportFrameStalls()
     {
-        if (_dbgFrames <= 1) return;
-        var n = _dbgFrames - 1;
-        var gapMean = _dbgGapSum / n;
-        var stall = _dbgGapMax > 12.0;
-        if (stall)
-        {
-            AppendLog($"[动画] {(_flyShowing ? "弹出" : "收起")}出现掉帧：帧数={_dbgFrames} " +
-                      $"间隔均值={gapMean:0.0}ms 最长={_dbgGapMax:0.0}ms " +
-                      $"摆位均值={_dbgWorkSum / _dbgFrames:0.00}ms 最长={_dbgWorkMax:0.00}ms");
-        }
-        _dbgFrames = 0;
-        _dbgGapSum = 0;
-        _dbgGapMax = 0;
-        _dbgWorkSum = 0;
-        _dbgWorkMax = 0;
+        var frames = _frameCount;
+        var gapMax = _frameGapMax;
+        var gapMean = frames > 1 ? _frameGapSum / (frames - 1) : 0.0;
+        var placeMean = frames > 0 ? _placeCostSum / frames : 0.0;
+        var placeMax = _placeCostMax;
+
+        _frameCount = 0;
+        _frameGapSum = 0;
+        _frameGapMax = 0;
+        _placeCostSum = 0;
+        _placeCostMax = 0;
+
+        if (frames <= 1 || gapMax <= 12.0) return;
+
+        AppendLog($"[动画] {(_flyShowing ? "弹出" : "收起")}出现掉帧：" +
+                  $"帧数={frames} 间隔均值={gapMean:0.0}ms 最长={gapMax:0.0}ms " +
+                  $"摆位均值={placeMean:0.00}ms 最长={placeMax:0.00}ms");
     }
 
     /// <summary>
@@ -1202,7 +1208,7 @@ public partial class MainWindow : Window
     /// DPI 必须现取，不能缓存成字段：缓存过一次就再也不会更新，换显示器或改缩放后
     /// 换算比例会是错的——2026-11-20 就踩过这个坑：缓存值停在 1.0，停在屏幕外的那 1906 DIP
     /// 被当成 1906 物理像素，在 150% 的屏幕上正好落回屏幕右上角，面板「收起」后其实一直挂在屏幕上。
-    /// 每帧多一次 GetDpi 的开销可以忽略。
+    /// 一次 GetDpi 的开销可以忽略，而它只在一段动画的首尾各调一次，不在逐帧路径上。
     /// </summary>
     private void PlaceWindow(double left, double top)
     {
@@ -1248,7 +1254,6 @@ public partial class MainWindow : Window
     private const uint SwpNoSize = 0x0001;
     private const uint SwpNoZOrder = 0x0004;
     private const uint SwpNoActivate = 0x0010;
-
 
     [DllImport("user32.dll", SetLastError = true)]
     private static extern bool SetWindowPos(
