@@ -974,26 +974,21 @@ public partial class MainWindow : Window
         AnimateFlyout(fromLeft, fromTop, left + offsetX, top + offsetY, showing: false, FinishHide);
     }
 
-    /// <summary>动画主时钟。每 tick 读一次它算进度，时间基准只此一处。</summary>
+    /// <summary>动画主时钟。工作线程用它算进度，时间基准只此一处。</summary>
     private System.Diagnostics.Stopwatch? _flyClock;
 
+    /// <summary>动画的推进线程。</summary>
+    private Thread? _flyWorker;
+
+    /// <summary>让工作线程尽快退出。</summary>
+    private volatile bool _flyAbort;
+
     /// <summary>
-    /// 推进动画的定时器，8ms 一次。
-    ///
-    /// 这个间隔不是「一帧」，而是「一帧内至少写一次坐标」：配合 timeBeginPeriod(1)，
-    /// 实际节拍落在 8~10ms，60Hz 屏幕每 16.7ms 采样时坐标都是新的，不会同一位置被采两帧。
-    /// 再密没有收益——一帧只上屏一次，多写的坐标谁也看不到，只白占 UI 线程。
-    ///
-    /// 也试过让 WPF 的 DoubleAnimation 来推（动画期间 WPF 按屏幕刷新逐帧求值）：
-    /// 实测弹出只有约 30fps、收起开头 90ms 同样掉到 30fps，比定时器还糙，所以自己驱动。
+    /// 动画代号。每开始一段就 +1，工作线程每帧核对一次，代号变了就立刻收手——
+    /// 上一段被打断时它可能正卡在 DwmFlush 里，回来后不能再去改新一段的坐标。
     /// </summary>
-    private DispatcherTimer? _flyTimer;
+    private int _flyGeneration;
 
-    /// <summary>动画期间系统定时器精度已提到 1ms，结束后必须还回去。</summary>
-    private bool _flyPeriodRaised;
-
-    private bool _flyClockStarted;
-    private bool _flyHooked;
     private double _flyFromLeft;
     private double _flyFromTop;
     private double _flyToLeft;
@@ -1008,9 +1003,14 @@ public partial class MainWindow : Window
     /// <summary>
     /// 布置一段出场/退场动画。
     ///
-    /// 推进靠一个 5ms 的 DispatcherTimer：每 tick 读一次秒表、按缓动曲线算位置、调一次
-    /// SetWindowPos。全程只有这一条推进路径——之前让渲染回调和定时器同时推，
-    /// 同一帧里坐标被写两三次、两次进度还不一样，那是顿挫的主要来源。
+    /// 推进放在单独的工作线程上，每帧等一次 DWM 合成（<see cref="DwmFlush"/>），
+    /// 拿到帧之后才算进度、搬一次窗口。这样节拍天然等于显示器刷新率：
+    /// 165Hz 屏就是约 6ms 一帧，60Hz 屏就是 16.7ms，不需要猜间隔，也不会和 vsync 错拍。
+    ///
+    /// 为什么不用 DispatcherTimer（2026-11-20 实测推翻）：定时器的实际最小节拍被 Windows
+    /// 定时器量化锁在 15.6ms，`timeBeginPeriod(1)` 在这台机器上没能把它提上去，
+    /// 240ms 的动画只跑了 17 帧（约 64Hz，165Hz 屏上就是明显的低帧率）。
+    /// 摆位本身只花 0.64ms，瓶颈完全在「等定时器」。
     /// </summary>
     private void AnimateFlyout(double fromLeft, double fromTop, double toLeft, double toTop,
                                bool showing, Action completed)
@@ -1039,74 +1039,163 @@ public partial class MainWindow : Window
 
         _flyClock ??= new System.Diagnostics.Stopwatch();
         _flyClock.Reset();
-        _flyClockStarted = false;
 
         // 起手先摆到起点，别让窗口停在上一段的残位上闪一下。
         PlaceWindow(fromLeft, fromTop);
 
-        if (!_flyHooked)
-        {
-            _flyTimer ??= new DispatcherTimer(DispatcherPriority.Render, Dispatcher)
-            {
-                Interval = TimeSpan.FromMilliseconds(8),
-            };
-            _flyTimer.Tick += OnFlyTick;
-            _flyHooked = true;
-        }
+        // DPI 在 UI 线程上取一次带进线程：VisualTreeHelper.GetDpi 要求调用方是创建窗口的线程，
+        // 工作线程自己去取会抛跨线程异常；一段动画 240ms 内缩放也不可能变。
+        var scale = VisualTreeHelper.GetDpi(this).DpiScaleX;
+        if (scale <= 0.1) scale = 1.0;
 
-        // 系统定时器默认精度 15.6ms，5ms 的间隔会被量化成 15/31ms 交替——
-        // 那正是「看着像掉帧」的来源。动画期间把精度提到 1ms，结束后还回去。
-        if (!_flyPeriodRaised)
-        {
-            timeBeginPeriod(1);
-            _flyPeriodRaised = true;
-        }
+        var generation = ++_flyGeneration;
+        _flyAbort = false;
 
-        _flyTimer?.Start();
+        _flyWorker = new Thread(() => FlyLoop(handle, scale, showing, generation))
+        {
+            IsBackground = true,
+            Name = "FlyoutMotion",
+            Priority = ThreadPriority.AboveNormal,
+        };
+        _flyWorker.Start();
     }
 
-    private void OnFlyTick(object? sender, EventArgs e) => AdvanceFlyout();
-
-    private void AdvanceFlyout()
+    /// <summary>
+    /// 逐帧推进。工作线程只负责「等帧 + 算坐标」，真正的摆位丢回 UI 线程执行。
+    ///
+    /// 为什么不直接在工作线程上 SetWindowPos：跨线程调用时窗口管理器会把
+    /// WM_WINDOWPOSCHANGED 同步发给窗口所属线程，工作线程得等 WPF 处理完才返回
+    /// （实测均值 3.3ms、峰值 56ms，把 165Hz 的 6ms 节拍吃掉一半）。
+    /// 加 SWP_ASYNCWINDOWPOS 能立刻返回，但它把请求排队投递，动画收尾时的旧请求
+    /// 可能晚于「停到屏幕外」落地，面板会重新冒出来——顺序不可控。
+    /// 所以改成：摆位回到 UI 线程（同线程调用不开销、顺序确定），帧时钟留在工作线程。
+    /// </summary>
+    private void FlyLoop(IntPtr handle, double scale, bool showing, int generation)
     {
-        if (_flyCompleted is null || _flyClock is null)
+        var clock = _flyClock;
+        if (clock is null) return;
+        clock.Restart();
+
+        var durationMs = showing ? FlyoutMotion.ShowDurationMs : FlyoutMotion.HideDurationMs;
+
+        var frames = 0;
+        var gapSum = 0.0;
+        var gapMax = 0.0;
+        var prevMs = 0.0;
+
+        while (!_flyAbort && generation == _flyGeneration)
         {
-            StopFlyAnimation();
-            return;
+            WaitForNextFrame();
+            if (_flyAbort || generation != _flyGeneration) return;
+
+            var elapsedMs = clock.Elapsed.TotalMilliseconds;
+            if (frames > 0)
+            {
+                var gap = elapsedMs - prevMs;
+                gapSum += gap;
+                if (gap > gapMax) gapMax = gap;
+            }
+            prevMs = elapsedMs;
+            frames++;
+
+            var progress = Math.Min(1.0, elapsedMs / durationMs);
+            var eased = showing ? FlyoutMotion.EaseShow(progress) : FlyoutMotion.EaseHide(progress);
+
+            // 缓动值允许越界：弹出时略过终点再回来，收起时先往回缩一下。
+            var left = _flyFromLeft + (_flyToLeft - _flyFromLeft) * eased;
+            var top = _flyFromTop + (_flyToTop - _flyFromTop) * eased;
+
+            var x = (int)Math.Round(left * scale);
+            var y = (int)Math.Round(top * scale);
+            Dispatcher.BeginInvoke(DispatcherPriority.Send,
+                new Action(() => ApplyFrame(handle, generation, x, y, left, top)));
+
+            if (progress >= 1.0) break;
         }
 
-        if (!_flyClockStarted)
-        {
-            _flyClockStarted = true;
-            _flyClock.Restart();
-        }
+        if (_flyAbort || generation != _flyGeneration) return;
 
-        var durationMs = _flyShowing ? FlyoutMotion.ShowDurationMs : FlyoutMotion.HideDurationMs;
-        var progress = Math.Min(1.0, _flyClock.Elapsed.TotalMilliseconds / durationMs);
-        var eased = _flyShowing ? FlyoutMotion.EaseShow(progress) : FlyoutMotion.EaseHide(progress);
+        _dbgFrames = frames;
+        _dbgGapSum = gapSum;
+        _dbgGapMax = gapMax;
 
-        // 缓动值允许越界：弹出时会略过终点再回来，收起时会先往回缩一下。
-        PlaceWindow(
-            _flyFromLeft + (_flyToLeft - _flyFromLeft) * eased,
-            _flyFromTop + (_flyToTop - _flyFromTop) * eased);
+        // 与上面的帧同一个队列、同一优先级，排在所有帧之后执行。
+        Dispatcher.BeginInvoke(DispatcherPriority.Send, new Action(CompleteFlyout));
+    }
 
-        if (progress < 1.0) return;
+    /// <summary>在 UI 线程上落一帧。代号不符说明这段动画已经被顶掉，直接丢弃。</summary>
+    private void ApplyFrame(IntPtr handle, int generation, int x, int y, double left, double top)
+    {
+        if (generation != _flyGeneration) return;
 
-        // 收尾把最终坐标写回 WPF 的 Left/Top：SetWindowPos 绕过了 WPF，
-        // 不同步的话后续 AnchorToTray 会按旧坐标把窗口重摆一次。
+        var work = System.Diagnostics.Stopwatch.StartNew();
+        SetWindowPos(handle, IntPtr.Zero, x, y, 0, 0, SwpNoSize | SwpNoZOrder | SwpNoActivate);
+        work.Stop();
+
+        _liveLeft = left;
+        _liveTop = top;
+
+        var ms = work.Elapsed.TotalMilliseconds;
+        _dbgWorkSum += ms;
+        if (ms > _dbgWorkMax) _dbgWorkMax = ms;
+    }
+
+    /// <summary>
+    /// 等到下一帧被合成。DwmFlush 会一直阻塞到 DWM 取走下一帧，返回即意味着「再画一次就会被看到」。
+    /// 调用失败（极少数环境没有合成）就退化成 4ms 睡眠，至少还能动。
+    /// </summary>
+    private static void WaitForNextFrame()
+    {
+        if (DwmFlush() != 0) Thread.Sleep(4);
+    }
+
+    /// <summary>动画收尾，回到 UI 线程：同步 WPF 的 Left/Top、记诊断、触发完成回调。</summary>
+    private void CompleteFlyout()
+    {
         var done = _flyCompleted;
         var endLeft = _flyToLeft;
         var endTop = _flyToTop;
 
+        // SetWindowPos 绕过了 WPF，不同步的话后续 AnchorToTray 会按旧坐标把窗口重摆一次。
         Left = endLeft;
         Top = endTop;
         PlaceWindow(endLeft, endTop);
 
+        DebugFrameReport();
         StopFlyAnimation();
         done?.Invoke();
     }
 
-    /// <summary>把窗口挪到指定 DIP 坐标。只搬已合成好的表面，不触发 WPF 重绘。</summary>
+    // ---------- 临时诊断：动画节拍与摆位耗时（诊断完删掉） ----------
+    private int _dbgFrames;
+    private double _dbgGapSum;
+    private double _dbgGapMax;
+    private double _dbgWorkSum;
+    private double _dbgWorkMax;
+
+    /// <summary>
+    /// 只在「某一帧明显迟到」时记一笔。正常情况下一声不响——用户日志里不该有每弹一次窗口
+    /// 就多一行的噪声；真出现卡顿则留下证据，不用再靠肉眼判断。
+    /// </summary>
+    private void DebugFrameReport()
+    {
+        if (_dbgFrames <= 1) return;
+        var n = _dbgFrames - 1;
+        var gapMean = _dbgGapSum / n;
+        var stall = _dbgGapMax > 12.0;
+        if (stall)
+        {
+            AppendLog($"[动画] {(_flyShowing ? "弹出" : "收起")}出现掉帧：帧数={_dbgFrames} " +
+                      $"间隔均值={gapMean:0.0}ms 最长={_dbgGapMax:0.0}ms " +
+                      $"摆位均值={_dbgWorkSum / _dbgFrames:0.00}ms 最长={_dbgWorkMax:0.00}ms");
+        }
+        _dbgFrames = 0;
+        _dbgGapSum = 0;
+        _dbgGapMax = 0;
+        _dbgWorkSum = 0;
+        _dbgWorkMax = 0;
+    }
+
     /// <summary>
     /// 把窗口搬到 (left, top)。参数是 WPF 的 DIP，SetWindowPos 要的是物理像素，这里按当前 DPI 换算。
     ///
@@ -1133,24 +1222,17 @@ public partial class MainWindow : Window
             SwpNoSize | SwpNoZOrder | SwpNoActivate);
     }
 
-    /// <summary>停掉正在播的动画，不触发完成回调。</summary>
+    /// <summary>
+    /// 停掉正在播的动画，不触发完成回调。
+    /// 工作线程只认代号：代号一变它下一帧就收手，不会再去改新一段的坐标。
+    /// </summary>
     private void StopFlyAnimation()
     {
-        if (_flyHooked)
-        {
-            _flyTimer?.Stop();
-            _flyHooked = false;
-        }
+        _flyAbort = true;
+        _flyGeneration++;
 
         _flyClock?.Stop();
         _flyCompleted = null;
-
-        // 精度提升必须成对还回去，否则整个进程都留着 1ms 定时器、白耗电。
-        if (_flyPeriodRaised)
-        {
-            timeEndPeriod(1);
-            _flyPeriodRaised = false;
-        }
     }
 
     private void FinishHide()
@@ -1167,20 +1249,17 @@ public partial class MainWindow : Window
     private const uint SwpNoZOrder = 0x0004;
     private const uint SwpNoActivate = 0x0010;
 
+
     [DllImport("user32.dll", SetLastError = true)]
     private static extern bool SetWindowPos(
         IntPtr hWnd, IntPtr hWndInsertAfter, int x, int y, int cx, int cy, uint flags);
 
     /// <summary>
-    /// 把系统定时器精度提到 1ms。不这么做时 DispatcherTimer 的实际节拍被量化到 15.6ms，
-    /// 8ms 的间隔会变成 15/31ms 交替，动画看起来就是一顿一顿的。
-    /// 调用必须成对（begin/end），动画结束就还回去。
+    /// 阻塞到 DWM 取走下一帧。返回 0 表示「再画一次就会被看到」，
+    /// 用它当节拍器等于直接跟着显示器刷新率走，不用猜间隔。
     /// </summary>
-    [DllImport("winmm.dll", EntryPoint = "timeBeginPeriod")]
-    private static extern uint timeBeginPeriod(uint milliseconds);
-
-    [DllImport("winmm.dll", EntryPoint = "timeEndPeriod")]
-    private static extern uint timeEndPeriod(uint milliseconds);
+    [DllImport("dwmapi.dll")]
+    private static extern int DwmFlush();
 
     private void OnWindowDeactivated(object? sender, EventArgs e)
     {
