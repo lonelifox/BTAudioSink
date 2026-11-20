@@ -1,3 +1,5 @@
+<p align="right"><a href="README_EN.md">English</a> | <b>简体中文</b></p>
+
 <p align="center">
   <img src="Assets/logo@1024.png" width="120" alt="BTAudioSink">
 </p>
