@@ -17,6 +17,12 @@ public sealed class AppSettings
     /// <summary>窗口使用 Mica 半透明材质。仅 Win11 生效，其他系统自动忽略。</summary>
     public bool UseMica { get; set; } = true;
 
+    /// <summary>
+    /// 面板出入场动画总开关。关掉后弹窗直接出现在终点位置、直接消失，不留过渡。
+    /// 只有这一个开关：位移和缓动是一体的，拆开单独关没有意义。
+    /// </summary>
+    public bool AnimationsEnabled { get; set; } = true;
+
     /// <summary>外观：自动跟随系统 / 浅色 / 深色。</summary>
     public AppTheme Theme { get; set; } = AppTheme.Auto;
 

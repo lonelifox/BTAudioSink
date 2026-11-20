@@ -88,6 +88,9 @@ public partial class TrayMenuWindow : Window
 
             StartupToggle.IsChecked = _app.Settings.StartWithWindows;
 
+            AnimationsToggle.IsChecked = _app.Settings.AnimationsEnabled;
+            AnimationsToggle.ToolTip = Loc.Get("Tray.AnimationsTip");
+
             // 语言：单选钮的选中态就是当前语言。设值会触发 Checked，
             // 所以上面那圈 _loading 必须已经生效——它挡住了这次「假切换」。
             LanguageChinese.IsChecked = Loc.Language == AppLanguage.Chinese;
@@ -240,5 +243,12 @@ public partial class TrayMenuWindow : Window
             StartupToggle.IsChecked = actual;
             _loading = false;
         }
+    }
+
+    /// <summary>面板动画总开关。改完立刻落盘，下次弹窗就按新设置走。</summary>
+    private void OnAnimationsChanged(object sender, RoutedEventArgs e)
+    {
+        if (_loading) return;
+        _app.SetAnimationsEnabled(AnimationsToggle.IsChecked == true);
     }
 }

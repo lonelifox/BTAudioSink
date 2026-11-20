@@ -98,6 +98,22 @@
                           Checked="OnStartupChanged" Unchecked="OnStartupChanged" />
             </Grid>
 
+            <!-- 动画总开关：位移、缓动、时序是一整套，只给一个开关，拆开没有意义 -->
+            <Grid Margin="10,2,8,2" MinHeight="32" ToolTip="{DynamicResource Tray.AnimationsTip}">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+
+                <TextBlock Text="{DynamicResource Tray.Animations}" FontSize="12.5" VerticalAlignment="Center"
+                           Foreground="{DynamicResource TextPrimaryBrush}" />
+
+                <CheckBox x:Name="AnimationsToggle" Grid.Column="1" Content=""
+                          Style="{StaticResource ToggleSwitch}"
+                          VerticalAlignment="Center"
+                          Checked="OnAnimationsChanged" Unchecked="OnAnimationsChanged" />
+            </Grid>
+
             <!-- 语言：跟外观一样用分段选择器，切换后整个界面立刻换文案 -->
             <Grid Margin="10,2,6,2" MinHeight="32">
                 <Grid.ColumnDefinitions>

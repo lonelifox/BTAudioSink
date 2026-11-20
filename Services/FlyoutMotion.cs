@@ -49,14 +49,12 @@ public readonly record struct CubicBezier(double X1, double Y1, double X2, doubl
 /// 出处是 DeskBox（WinUI 3）的托盘弹窗动画：位移逐帧推进、缓动统一用三次贝塞尔、
 /// 弹出略过冲、收起先往回缩再加速离开。下面这四条曲线常数与它一一对应。
 ///
-/// 有一条通道移植不了，写在这里是为了以后有人照着 DeskBox 补功能时少走弯路：
-/// 它的 Mica 是自己合成进视觉树里的，所以材质本身能跟着淡、跟着缩放；
-/// 我们的 Mica 由 DWM 直接画在窗口表面下方，透明度动不了它。
-/// 所以淡入只作用在**内容层**（ContentLayer）：底下的材质一出现就是满的，
-/// 文字和卡片淡上来。实测内容 opacity=0.5 时中心像素是 #8F1010（红与背板按 50% 混合），
-/// 说明 WPF 内容确实带着 alpha 合成到 DWM 背板上——注意这要求窗口把客户区划成玻璃区
-/// （GlassFrameThickness=-1），否则 DWM 不会铺材质，淡到底只剩黑。
-/// 缩放通道同理放弃：窗口本身不能缩放，只缩内容会在固定的玻璃面板里留一圈空白。
+/// 有两条通道移植不了，写在这里是为了以后有人照着 DeskBox 补功能时少走弯路：
+/// 一是材质，它的 Mica 自己合成进视觉树，材质能跟着淡、跟着缩放；我们的 Mica 由 DWM
+/// 画在窗口表面下方，透明度动不了它（跟着淡只剩黑，除非窗口把客户区划成玻璃区）。
+/// 二是缩放，窗口本身不能缩放，只缩内容会在固定的玻璃面板里留一圈空白。
+/// 内容淡入曾经做过一版，2026-11-20 按 HB 的要求整个删掉：一层位移已经够干净，
+/// 再叠一层透明度只会让文字在动的时候发虚，还多一次每帧的属性写入。
 /// </summary>
 public static class FlyoutMotion
 {
@@ -81,24 +79,4 @@ public static class FlyoutMotion
     public static double EaseShow(double x) => ShowCurve.At(x);
 
     public static double EaseHide(double x) => HideCurve.At(x);
-
-    /// <summary>
-    /// 弹出时内容层的起始不透明度。用 0 而不是 0.3：从 0 淡上来才有「浮现」的意思，
-    /// 从 0.3 起步看起来更像闪了一下。淡入比位移早结束——曲线在 50% 时已到 0.99，
-    /// 剩下的时间只是位移在收尾，眼睛不会觉得内容还在慢慢显影。
-    /// </summary>
-    public const double ShowStartOpacity = 0.0;
-
-    /// <summary>
-    /// 弹出时的内容透明度。曲线越界大于 1 时夹回 1，不然 WPF 会把值当非法值忽略。
-    /// </summary>
-    public static double ContentOpacity(double progress, bool showing)
-    {
-        var eased = showing ? EaseShow(progress) : EaseHide(progress);
-        var value = showing
-            ? ShowStartOpacity + (1.0 - ShowStartOpacity) * eased
-            : 1.0 - eased;
-
-        return Math.Clamp(value, 0.0, 1.0);
-    }
 }

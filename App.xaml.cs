@@ -132,8 +132,17 @@ public partial class App : System.Windows.Application
         _main.FlyoutHidden += (_, _) => _flyoutHiddenAt = DateTime.UtcNow;
 
         var startMinimized = Array.Exists(e.Args, arg => arg == "--minimized");
-        if (startMinimized) _main.Hide();
-        else ShowMainWindow();
+        // 窗口先 Show 一次并停在所有显示器之外，之后再弹出就只剩一次 SetWindowPos——
+        // 每次 Hide/Show 都要重走一遍首帧渲染，实测多出 140~180ms 的空白期。
+        _main.ParkOffscreen();
+
+        // 排到界面空闲时再弹：此刻窗口刚 Show 过一遍，首帧渲染还没落地，
+        // 这时候起动画会和它抢 UI 线程，表现出来就是「弹出来第一下是跳的」。
+        if (!startMinimized)
+        {
+            Dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.ApplicationIdle,
+                new Action(ShowMainWindow));
+        }
 
         StartExitListener();
     }
@@ -302,6 +311,19 @@ public partial class App : System.Windows.Application
 
     /// <summary>托盘菜单切换毛玻璃。材质只在主窗口上生效，交回窗口处理。</summary>
     public void SetMicaEnabled(bool enabled) => _main?.SetMicaEnabled(enabled);
+
+    /// <summary>
+    /// 切换面板动画总开关。只影响下一次弹出/收起，正在播的那一段不打断——
+    /// 关掉的瞬间把窗口硬拽到终点反而更难看。
+    /// </summary>
+    public void SetAnimationsEnabled(bool enabled)
+    {
+        if (Settings.AnimationsEnabled == enabled) return;
+
+        Settings.AnimationsEnabled = enabled;
+        Settings.Save();
+        _main?.AppendAnimationsLog(enabled);
+    }
 
     /// <summary>
     /// 托盘菜单切换开机自启动。
@@ -501,7 +523,7 @@ public partial class App : System.Windows.Application
     {
         if (_main is null) return;
 
-        if (_main.IsVisible)
+        if (_main.IsPanelOpen)
         {
             _main.HideFlyout();
             return;

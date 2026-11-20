@@ -11,8 +11,8 @@ using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Interop;
 using System.Windows.Media;
-using System.Windows.Media.Animation;
 using System.Windows.Shell;
+using System.Windows.Threading;
 using BTAudioSink.Interop;
 using BTAudioSink.Models;
 using BTAudioSink.Services;
@@ -137,6 +137,10 @@ public partial class MainWindow : Window
     /// <summary>托盘菜单切换开机自启动后调用，把结果写进运行日志。</summary>
     public void AppendStartupLog(bool enabled) =>
         AppendLog(Loc.Get(enabled ? "Log.StartupOn" : "Log.StartupOff"));
+
+    /// <summary>托盘菜单切换面板动画后调用，把结果写进运行日志。</summary>
+    public void AppendAnimationsLog(bool enabled) =>
+        AppendLog(Loc.Get(enabled ? "Log.AnimationsOn" : "Log.AnimationsOff"));
 
     /// <summary>托盘菜单切换语言后调用，把结果写进运行日志。</summary>
     public void AppendLanguageLog(AppLanguage language) =>
@@ -765,33 +769,57 @@ public partial class MainWindow : Window
     /// <summary>正在滑出。滑入被打断时也要能正常收起来，所以和 _flyoutAnimating 分开。</summary>
     private bool _flyoutClosing;
 
-    /// <summary>首次真正显示前有没有预热过。预热一次够用，之后就都走快路径。</summary>
-    private bool _warmedUp;
+    /// <summary>窗口是否已经停在屏幕外（= 已经 Show 过一次）。</summary>
+    private bool _parked;
+
+    /// <summary>面板现在是「打开」状态。收起后窗口仍留在屏幕外，所以不能用 IsVisible 代替。</summary>
+    private bool _panelOpen;
+
+    /// <summary>面板是否打开。托盘点击靠它决定「弹出」还是「收起」。</summary>
+    public bool IsPanelOpen => _panelOpen;
+
+    /// <summary>停窗口的位置：所有显示器右侧之外，任何屏幕都够不着。</summary>
+    private (double Left, double Top) ParkPosition()
+    {
+        var scale = VisualTreeHelper.GetDpi(this).DpiScaleX;
+        if (scale <= 0.1) scale = 1.0;
+
+        var bounds = Forms.SystemInformation.VirtualScreen;
+        return (bounds.Right / scale + 200, bounds.Top / scale);
+    }
 
     /// <summary>
-    /// 在屏幕外把这个窗口先「演」一遍。
+    /// 把窗口停到所有显示器之外，保持「已显示」状态。
     ///
-    /// 第一次 Show() 实测要 247ms——里面全是模板展开、字号测量、字体栅格化这类一次性开销，
-    /// 而且这 247ms 里有一半是窗口已经可见之后才花掉的，看起来就是「弹出来、愣一下、再开始滑」。
-    /// 先在屏幕外渲染一遍，把这笔钱在开门前花掉，首次 Show() 降到 6ms。
+    /// 为什么不 Hide：每次 Hide 之后再 Show，WPF 都要重走首帧渲染，实测从 Show 到真正上屏
+    /// 要 140~180ms，这段时间屏幕上什么都没有——用户点了托盘图标先是「没反应」，
+    /// 然后面板突然出现并开始滑，这正是卡顿感的来源（2026-11-20 用探针量到的）。
+    /// 让窗口一直活着、只是挪出屏幕，下次弹出就只剩一次 SetWindowPos，第一帧立刻可见。
     ///
-    /// 用 Hide() 而不是走收起的动画路径：预热不该产生 FlyoutHidden 事件，
-    /// 否则紧接着的真实弹出会被「刚收起过 250ms」的规则挡掉。
+    /// 首次 Show 的开销（模板展开、字号测量、字体栅格化）也在这里付掉，
+    /// 所以弹出路径里不再需要预热。
     /// </summary>
-    private void WarmUp()
+    public void ParkOffscreen()
     {
-        Left = -10000;
-        Top = -10000;
+        var (left, top) = ParkPosition();
+        Left = left;
+        Top = top;
+        _liveLeft = left;
+        _liveTop = top;
+
+        if (_parked) return;
+
+        _parked = true;
         Show();
         UpdateLayout();
-        Hide();
+        PlaceWindow(left, top);
     }
 
     /// <summary>
     /// 贴着托盘弹出：按任务栏所在的那条边决定位置，并从那个方向滑出来。
     ///
-    /// 顺序是「摆位 → 布置动画 → Show」，而不是「Show 之后再挪」：
-    /// 后者第一帧会先出现在终点闪一下；前者窗口一露面就在滑。
+    /// 窗口平时就停在屏幕外（<see cref="ParkOffscreen"/>），所以这里没有 Show：
+    /// 只是把窗口搬到起点、再逐帧搬到终点，第一帧就是「已经在滑」的样子。
     /// </summary>
     public void ShowAtTray()
     {
@@ -804,11 +832,8 @@ public partial class MainWindow : Window
         // 用「哪块屏幕」定下来，别跟着鼠标乱跳。
         _trayScreen = Forms.Screen.FromPoint(Forms.Cursor.Position);
 
-        if (!_warmedUp)
-        {
-            _warmedUp = true;
-            WarmUp();
-        }
+        // 首次调用时把窗口 Show 一次并停在屏幕外；之后一直保持这个状态。
+        ParkOffscreen();
 
         // 上一段还没播完就重新弹出，先把旧的停掉，别让两条动画同时改坐标。
         StopFlyAnimation();
@@ -816,11 +841,22 @@ public partial class MainWindow : Window
         _anchoredToTray = true;
         // 从「摆到场外」这一刻起就不许 AnchorToTray 插手，否则它会把窗口拽回终点。
         _flyoutAnimating = true;
+        _panelOpen = true;
+        _shownAt = DateTime.UtcNow;
 
-        // 先把窗口停在场外的起点再 Show。
-        // 原来的顺序是先 Show 再挪，第一帧会已经出现在终点、闪一下才开始滑；
-        // DeskBox 的做法也是先摆好位置再显示，这里对齐。
         var (targetLeft, targetTop) = TargetPosition(out var edge);
+
+        // 动画总开关关掉：直接落到终点，不留任何过渡。
+        if (!_app.Settings.AnimationsEnabled)
+        {
+            Left = targetLeft;
+            Top = targetTop;
+            PlaceWindow(targetLeft, targetTop);
+            _flyoutAnimating = false;
+            ActivatePanel();
+            return;
+        }
+
         var (offsetX, offsetY) = FlyoutPlacement.EnterOffset(edge);
         var startLeft = targetLeft + offsetX;
         var startTop = targetTop + offsetY;
@@ -830,17 +866,28 @@ public partial class MainWindow : Window
         _liveLeft = startLeft;
         _liveTop = startTop;
 
-        // 内容先摆成全透明，第一帧才不会是「已经摆好的一整窗内容」再跳回透明。
-        ContentLayer.Opacity = FlyoutMotion.ShowStartOpacity;
-
-        // 动画在 Show 之前就布置好：帧回调从这一刻开始等，窗口一上屏就走。
+        // 摆好起点、开始滑。窗口本来就是可见的，所以这里不需要 Show。
         AnimateFlyout(startLeft, startTop, targetLeft, targetTop, showing: true,
                       () => _flyoutAnimating = false);
 
-        Show();
-        ForceForeground();
-        _shownAt = DateTime.UtcNow;
-        Focus();
+        ActivatePanel();
+    }
+
+    /// <summary>
+    /// 抢前台并给上焦点。
+    ///
+    /// 点托盘图标时本进程并没有「拿到鼠标输入」，单纯 Activate() 可能不生效；
+    /// 窗口没激活就收不到 Deactivated，点外面也就不会自己收回。
+    /// 排到界面空闲时做：这两个调用要跟窗口管理器打交道，会把 UI 线程占住几十毫秒，
+    /// 放在滑动的第一帧前面就是白白多一次卡顿。
+    /// </summary>
+    private void ActivatePanel()
+    {
+        Dispatcher.BeginInvoke(DispatcherPriority.ApplicationIdle, new Action(() =>
+        {
+            ForceForeground();
+            Focus();
+        }));
     }
 
     /// <summary>任务栏那条边 → 弹窗目标位置。贴托盘图标那一头，同时避开任务栏本身。</summary>
@@ -879,7 +926,7 @@ public partial class MainWindow : Window
     /// <summary>把窗口钉在目标位置。动画过程中不插手，否则会把滑动打断。</summary>
     private void AnchorToTray()
     {
-        if (_trayScreen is null || !IsVisible || _flyoutAnimating) return;
+        if (_trayScreen is null || !_panelOpen || _flyoutAnimating) return;
 
         var (left, top) = TargetPosition(out _);
         Left = left;
@@ -894,12 +941,25 @@ public partial class MainWindow : Window
         if (_anchoredToTray) AnchorToTray();
     }
 
-    /// <summary>收起弹窗。先往任务栏方向滑出去，滑完才真正 Hide。</summary>
+    /// <summary>收起弹窗。先往任务栏方向滑出去，滑完挪回屏幕外（窗口不 Hide，见 <see cref="ParkOffscreen"/>）。</summary>
     public void HideFlyout()
     {
         // 正在退场就别再启动一次；但正在进场时要允许打断——用户点了外面，
         // 不能因为「动画还没播完」就把窗口一直留在屏幕上。
-        if (!IsVisible || _flyoutClosing) return;
+        if (!_panelOpen || _flyoutClosing) return;
+
+        // 动画关掉时直接收，不等退场。
+        if (!_app.Settings.AnimationsEnabled)
+        {
+            StopFlyAnimation();
+            _anchoredToTray = false;
+            _flyoutAnimating = false;
+            _flyoutClosing = false;
+            _panelOpen = false;
+            ParkOffscreen();
+            FlyoutHidden?.Invoke(this, EventArgs.Empty);
+            return;
+        }
 
         var (left, top) = TargetPosition(out var edge);
         var (offsetX, offsetY) = FlyoutPlacement.EnterOffset(edge);
@@ -914,17 +974,23 @@ public partial class MainWindow : Window
         AnimateFlyout(fromLeft, fromTop, left + offsetX, top + offsetY, showing: false, FinishHide);
     }
 
-    /// <summary>动画主时钟。第一帧真的上屏之后才起表，见 <see cref="AnimateFlyout"/>。</summary>
+    /// <summary>动画主时钟。每 tick 读一次它算进度，时间基准只此一处。</summary>
     private System.Diagnostics.Stopwatch? _flyClock;
 
-    /// <summary>7ms 节拍器，动画的实际推进靠它。</summary>
-    private System.Windows.Threading.DispatcherTimer? _flyTimer;
+    /// <summary>
+    /// 推进动画的定时器，8ms 一次。
+    ///
+    /// 这个间隔不是「一帧」，而是「一帧内至少写一次坐标」：配合 timeBeginPeriod(1)，
+    /// 实际节拍落在 8~10ms，60Hz 屏幕每 16.7ms 采样时坐标都是新的，不会同一位置被采两帧。
+    /// 再密没有收益——一帧只上屏一次，多写的坐标谁也看不到，只白占 UI 线程。
+    ///
+    /// 也试过让 WPF 的 DoubleAnimation 来推（动画期间 WPF 按屏幕刷新逐帧求值）：
+    /// 实测弹出只有约 30fps、收起开头 90ms 同样掉到 30fps，比定时器还糙，所以自己驱动。
+    /// </summary>
+    private DispatcherTimer? _flyTimer;
 
-    /// <summary>这一帧窗口有没有真的被 DWM 合成到屏幕上。弹出时它决定动画从哪一刻开始算。</summary>
-    private bool _flyOnScreen;
-
-    /// <summary>等第一帧的看门狗：回调一直不来就自己放行，别让窗口卡在起点。</summary>
-    private System.Diagnostics.Stopwatch? _flyArmClock;
+    /// <summary>动画期间系统定时器精度已提到 1ms，结束后必须还回去。</summary>
+    private bool _flyPeriodRaised;
 
     private bool _flyClockStarted;
     private bool _flyHooked;
@@ -932,7 +998,6 @@ public partial class MainWindow : Window
     private double _flyFromTop;
     private double _flyToLeft;
     private double _flyToTop;
-    private double _flyScale = 1.0;
     private bool _flyShowing;
     private Action? _flyCompleted;
 
@@ -943,17 +1008,9 @@ public partial class MainWindow : Window
     /// <summary>
     /// 布置一段出场/退场动画。
     ///
-    /// 两条通道，和 DeskBox 一致：位移逐帧推进 + 内容层透明度。
-    /// 「哪一刻算动画开始」是这里最麻烦的一件事，两个实测数字决定了做法：
-    ///
-    ///   1. 窗口从 Show() 到真正被 DWM 推上屏幕要 50~90ms。这段时间窗口虽然 IsVisible
-    ///      已经是 true，屏幕上还是什么都没有（或者只有起点那一小块）。
-    ///   2. 这个窗口的渲染回调（CompositionTarget.Rendering）只有约 32Hz，间隔 31ms，
-    ///      拿它当节拍器一定一顿一顿。
-    ///
-    /// 所以：节拍用 7ms 的 DispatcherTimer；但秒表要等第一个渲染回调才起——
-    /// 那一帧才是第一次真正上屏。早了，第一帧会显示进度已经 25% 的位置，看起来像跳；
-    /// 晚了，窗口停在起点干等。收起不用等（窗口本来就在屏幕上）。
+    /// 推进靠一个 5ms 的 DispatcherTimer：每 tick 读一次秒表、按缓动曲线算位置、调一次
+    /// SetWindowPos。全程只有这一条推进路径——之前让渲染回调和定时器同时推，
+    /// 同一帧里坐标被写两三次、两次进度还不一样，那是顿挫的主要来源。
     /// </summary>
     private void AnimateFlyout(double fromLeft, double fromTop, double toLeft, double toTop,
                                bool showing, Action completed)
@@ -969,8 +1026,6 @@ public partial class MainWindow : Window
             Top = toTop;
             _liveLeft = toLeft;
             _liveTop = toTop;
-            // 内容必须补回不透明，否则窗口会以全透明的样子停在那儿。
-            ContentLayer.Opacity = 1.0;
             completed();
             return;
         }
@@ -982,54 +1037,35 @@ public partial class MainWindow : Window
         _flyShowing = showing;
         _flyCompleted = completed;
 
-        _flyScale = VisualTreeHelper.GetDpi(this).DpiScaleX;
-        if (_flyScale <= 0.1) _flyScale = 1.0;
-
         _flyClock ??= new System.Diagnostics.Stopwatch();
         _flyClock.Reset();
         _flyClockStarted = false;
-
-        // 收起时窗口早就在屏幕上，第一帧拍马就到；弹出时要等。
-        _flyOnScreen = !showing;
-        _flyArmClock ??= new System.Diagnostics.Stopwatch();
-        _flyArmClock.Restart();
 
         // 起手先摆到起点，别让窗口停在上一段的残位上闪一下。
         PlaceWindow(fromLeft, fromTop);
 
         if (!_flyHooked)
         {
-            CompositionTarget.Rendering += OnPresentFrame;
-            _flyTimer ??= new System.Windows.Threading.DispatcherTimer(
-                System.Windows.Threading.DispatcherPriority.Render)
+            _flyTimer ??= new DispatcherTimer(DispatcherPriority.Render, Dispatcher)
             {
-                Interval = TimeSpan.FromMilliseconds(7),
+                Interval = TimeSpan.FromMilliseconds(8),
             };
             _flyTimer.Tick += OnFlyTick;
             _flyHooked = true;
         }
 
+        // 系统定时器默认精度 15.6ms，5ms 的间隔会被量化成 15/31ms 交替——
+        // 那正是「看着像掉帧」的来源。动画期间把精度提到 1ms，结束后还回去。
+        if (!_flyPeriodRaised)
+        {
+            timeBeginPeriod(1);
+            _flyPeriodRaised = true;
+        }
+
         _flyTimer?.Start();
     }
 
-    /// <summary>渲染回调来了 = 已经有帧真的合成到屏幕上，动画可以从这一刻起表。</summary>
-    private void OnPresentFrame(object? sender, EventArgs e)
-    {
-        _flyOnScreen = true;
-        AdvanceFlyout();
-    }
-
-    private void OnFlyTick(object? sender, EventArgs e)
-    {
-        // 第一帧迟迟不来（刚显示的窗口要 50~90ms），等满 250ms 就自己放行。
-        // 宁可早一点露一眼起点，也别让窗口卡在那儿不动。
-        if (!_flyOnScreen && _flyArmClock is not null && _flyArmClock.ElapsedMilliseconds > 250)
-        {
-            _flyOnScreen = true;
-        }
-
-        AdvanceFlyout();
-    }
+    private void OnFlyTick(object? sender, EventArgs e) => AdvanceFlyout();
 
     private void AdvanceFlyout()
     {
@@ -1038,8 +1074,6 @@ public partial class MainWindow : Window
             StopFlyAnimation();
             return;
         }
-
-        if (!_flyOnScreen) return;
 
         if (!_flyClockStarted)
         {
@@ -1055,10 +1089,6 @@ public partial class MainWindow : Window
         PlaceWindow(
             _flyFromLeft + (_flyToLeft - _flyFromLeft) * eased,
             _flyFromTop + (_flyToTop - _flyFromTop) * eased);
-
-        // 位移之外再叠一层内容淡入淡出，和 DeskBox 一样用同一条曲线、同一帧推进。
-        // 只作用在 ContentLayer：底下的材质由 DWM 画，动不了它，跟着淡会露黑。
-        ContentLayer.Opacity = FlyoutMotion.ContentOpacity(progress, _flyShowing);
 
         if (progress < 1.0) return;
 
@@ -1077,6 +1107,14 @@ public partial class MainWindow : Window
     }
 
     /// <summary>把窗口挪到指定 DIP 坐标。只搬已合成好的表面，不触发 WPF 重绘。</summary>
+    /// <summary>
+    /// 把窗口搬到 (left, top)。参数是 WPF 的 DIP，SetWindowPos 要的是物理像素，这里按当前 DPI 换算。
+    ///
+    /// DPI 必须现取，不能缓存成字段：缓存过一次就再也不会更新，换显示器或改缩放后
+    /// 换算比例会是错的——2026-11-20 就踩过这个坑：缓存值停在 1.0，停在屏幕外的那 1906 DIP
+    /// 被当成 1906 物理像素，在 150% 的屏幕上正好落回屏幕右上角，面板「收起」后其实一直挂在屏幕上。
+    /// 每帧多一次 GetDpi 的开销可以忽略。
+    /// </summary>
     private void PlaceWindow(double left, double top)
     {
         _liveLeft = left;
@@ -1085,9 +1123,12 @@ public partial class MainWindow : Window
         var handle = new WindowInteropHelper(this).Handle;
         if (handle == IntPtr.Zero) return;
 
+        var scale = VisualTreeHelper.GetDpi(this).DpiScaleX;
+        if (scale <= 0.1) scale = 1.0;
+
         SetWindowPos(
             handle, IntPtr.Zero,
-            (int)Math.Round(left * _flyScale), (int)Math.Round(top * _flyScale),
+            (int)Math.Round(left * scale), (int)Math.Round(top * scale),
             0, 0,
             SwpNoSize | SwpNoZOrder | SwpNoActivate);
     }
@@ -1097,13 +1138,19 @@ public partial class MainWindow : Window
     {
         if (_flyHooked)
         {
-            CompositionTarget.Rendering -= OnPresentFrame;
             _flyTimer?.Stop();
             _flyHooked = false;
         }
 
         _flyClock?.Stop();
         _flyCompleted = null;
+
+        // 精度提升必须成对还回去，否则整个进程都留着 1ms 定时器、白耗电。
+        if (_flyPeriodRaised)
+        {
+            timeEndPeriod(1);
+            _flyPeriodRaised = false;
+        }
     }
 
     private void FinishHide()
@@ -1111,7 +1158,8 @@ public partial class MainWindow : Window
         _flyoutAnimating = false;
         _flyoutClosing = false;
         _anchoredToTray = false;
-        Hide();
+        _panelOpen = false;
+        ParkOffscreen();
         FlyoutHidden?.Invoke(this, EventArgs.Empty);
     }
 
@@ -1122,6 +1170,17 @@ public partial class MainWindow : Window
     [DllImport("user32.dll", SetLastError = true)]
     private static extern bool SetWindowPos(
         IntPtr hWnd, IntPtr hWndInsertAfter, int x, int y, int cx, int cy, uint flags);
+
+    /// <summary>
+    /// 把系统定时器精度提到 1ms。不这么做时 DispatcherTimer 的实际节拍被量化到 15.6ms，
+    /// 8ms 的间隔会变成 15/31ms 交替，动画看起来就是一顿一顿的。
+    /// 调用必须成对（begin/end），动画结束就还回去。
+    /// </summary>
+    [DllImport("winmm.dll", EntryPoint = "timeBeginPeriod")]
+    private static extern uint timeBeginPeriod(uint milliseconds);
+
+    [DllImport("winmm.dll", EntryPoint = "timeEndPeriod")]
+    private static extern uint timeEndPeriod(uint milliseconds);
 
     private void OnWindowDeactivated(object? sender, EventArgs e)
     {

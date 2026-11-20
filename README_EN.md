@@ -51,6 +51,7 @@ Windows has been able to do this since build 2004 — the API is `AudioPlaybackC
 - **Bilingual UI** — switch between Chinese and English from the tray menu, applied instantly and remembered
 - **Per-device auto reconnect** — toggle per device; enabled devices reconnect after a drop, disabled ones are left alone, and anything you disconnected by hand stays disconnected
 - **Lives in the tray** — left-click toggles the panel (it slides out along the taskbar edge with a slight overshoot), right-click opens the settings menu
+- **Animations can be switched off** — a single "Panel animations" toggle in the tray menu; with it off the panel appears and disappears instantly
 - **High DPI aware** — PerMonitorV2, stays crisp across monitors; fixed window height, the list scrolls when you have many devices
 - **Log file** — the "Log" button in the footer opens `%APPDATA%\BTAudioSink\log.txt`
 
