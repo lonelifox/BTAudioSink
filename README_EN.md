@@ -81,7 +81,7 @@ Appearance, Mica, run-at-login, language and "disconnect all" live in the **righ
 
 **It says `RequestTimedOut`.** The phone did not respond. Unlock it and tap this PC in its Bluetooth settings.
 
-**Connected but no sound.** Check the per-device volume in the Windows volume mixer, and make sure the phone is actually playing media audio.
+**Connected but no sound.** Check the per-device volume in the Windows volume mixer, and make sure the phone is actually playing media audio. Clicking **Reconnect** is also worth a try.
 
 **Can it work as a microphone?** No. A2DP is one-way media streaming into the PC.
 
@@ -106,7 +106,6 @@ Installer packaging, the offscreen preview project, the consistency check script
 
 - Audio in only, never a microphone
 - Some older Bluetooth adapters lack the Sink role; `TryCreateFromId` returns null on those
-- Phones sometimes need a manual confirmation before connecting
 - Devices must be paired in Windows Settings first; the app does not pair
 - Disconnecting one device can make Windows report its neighbours on the same adapter as disconnected too; the app recovers automatically
 - Mica may fail to render on a few GPU drivers; the app turns it off automatically after an abnormal exit
