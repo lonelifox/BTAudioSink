@@ -111,6 +111,11 @@ public partial class TrayMenuWindow : Window
         var area = Forms.Screen.FromPoint(cursor).WorkingArea;
         var scale = GetScale();
 
+        // 先粗定位再 Show：Left/Top 的默认值是 0，直接 Show 会让菜单在屏幕左上角闪一下。
+        // SizeToContent 又要求「先显示才能量出尺寸」，这个顺序绕不开，只能把起点先摆对。
+        Left = cursor.X / scale;
+        Top = cursor.Y / scale;
+
         // 先显示出来才知道内容多大（SizeToContent）
         Show();
         UpdateLayout();

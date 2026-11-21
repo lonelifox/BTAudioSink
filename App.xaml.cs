@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.Drawing;
 using System.Drawing.Drawing2D;
 using System.IO;
@@ -382,14 +383,44 @@ public partial class App : System.Windows.Application
 
         if (_tray is null) return;
 
-        var next = TrayIconFactory.Create(connectedCount > 0);
-        var previous = _tray.Icon;
-        _tray.Icon = next;
-        previous?.Dispose();
+        // 图标按状态缓存，换连接状态时不再重画一次。
+        // 之前每次都要新建位图、开 Graphics、4 倍超采样再缩回来、手工拼 ICO——
+        // 一秒钟连着连断几次就是几百个 GDI 对象。
+        var next = GetTrayIcon(connectedCount > 0);
+        if (!ReferenceEquals(_tray.Icon, next))
+        {
+            // 不释放旧图标：它留在缓存里，下次切回这个状态直接复用。
+            // 真正的释放发生在 OnExit，那时托盘图标已经从任务栏移除了。
+            _tray.Icon = next;
+        }
 
         _tray.Text = connectedCount > 0
             ? Loc.Format("Tray.Tip.Count", connectedCount)
             : Loc.Get("Tray.Tip.None");
+    }
+
+    /// <summary>两种连接状态各留一枚托盘图标，DPI 变了才重画。</summary>
+    private readonly Dictionary<bool, (Icon Icon, int Size)> _trayIcons = new();
+
+    /// <summary>
+    /// DPI 变化后被换下来的图标。留到退出时统一释放：换下的那一刻它可能还挂在托盘上，
+    /// 立刻 Dispose 会让任务栏那一格变成空白，而重建它又要等下一次状态变化。
+    /// </summary>
+    private readonly List<Icon> _retiredTrayIcons = new();
+
+    private Icon GetTrayIcon(bool connected)
+    {
+        var size = TrayIconFactory.TrayIconSize();
+
+        if (_trayIcons.TryGetValue(connected, out var cached) && cached.Size == size)
+        {
+            return cached.Icon;
+        }
+
+        var icon = TrayIconFactory.Create(connected);
+        if (_trayIcons.TryGetValue(connected, out var stale)) _retiredTrayIcons.Add(stale.Icon);
+        _trayIcons[connected] = (icon, size);
+        return icon;
     }
 
     public void ExitApp()
@@ -460,6 +491,12 @@ public partial class App : System.Windows.Application
         Microsoft.Win32.SystemEvents.UserPreferenceChanged -= OnUserPreferenceChanged;
         Microsoft.Win32.SystemEvents.SessionEnding -= OnSessionEnding;
         _tray?.Dispose();
+        // 托盘图标是我们自己画的，NotifyIcon 不接管所有权，得在这里释放。
+        // 必须在移除托盘图标之后——图标还在任务栏上时释放句柄会让它变成空白格。
+        foreach (var entry in _trayIcons.Values) entry.Icon.Dispose();
+        _trayIcons.Clear();
+        foreach (var icon in _retiredTrayIcons) icon.Dispose();
+        _retiredTrayIcons.Clear();
         _mutex?.Dispose();
         // 退出信号句柄不释放的话，别的进程再开 --exit 会拿到一个已废弃的对象，
         // 通知就发不到这里了。
@@ -484,13 +521,24 @@ public partial class App : System.Windows.Application
         }
     }
 
+    /// <summary>当前铺在资源字典里的主题。换主题时按引用定位，不靠下标。</summary>
+    private ResourceDictionary? _themeDictionary;
+
     private void ApplyTheme(bool light)
     {
         var dictionary = new ResourceDictionary
         {
             Source = new Uri(light ? "Theme/Light.xaml" : "Theme/Dark.xaml", UriKind.Relative),
         };
-        Resources.MergedDictionaries[0] = dictionary;
+
+        // 按下标替换（[0]）能跑，但那依赖 App.xaml 里字典的书写顺序——
+        // 以后谁往前插一个字典，这里就会默默换掉别人。按引用找位置更稳。
+        var merged = Resources.MergedDictionaries;
+        var index = _themeDictionary is null ? 0 : merged.IndexOf(_themeDictionary);
+        if (index < 0 || index >= merged.Count) index = 0;
+
+        merged[index] = dictionary;
+        _themeDictionary = dictionary;
     }
 
     // ---------- 托盘 ----------
@@ -590,7 +638,7 @@ internal static class TrayIconFactory
     private static extern uint GetDpiForSystem();
 
     /// <summary>托盘图标该用多少物理像素来画。</summary>
-    private static int TrayIconSize()
+    internal static int TrayIconSize()
     {
         var dpi = GetDpiForSystem();
         if (dpi == 0) return TrayIconBaseSize;

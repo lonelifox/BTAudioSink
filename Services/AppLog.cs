@@ -19,6 +19,12 @@ internal static class AppLog
 
     private static readonly object Gate = new();
 
+    /// <summary>目录建好、历史文件迁完没有。之后每次写日志就不必再探一遍文件系统。</summary>
+    private static bool _prepared;
+
+    /// <summary>距上次检查轮转写了多少行。每条都查等于每行多两次文件系统调用。</summary>
+    private static int _writesSinceRotateCheck;
+
     /// <summary>日志文件位置。界面上点「日志」打开的就是它。</summary>
     public static string LogFilePath => Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
@@ -31,18 +37,31 @@ internal static class AppLog
             lock (Gate)
             {
                 var path = LogFilePath;
-                Directory.CreateDirectory(Path.GetDirectoryName(path)!);
 
-                MigrateLegacyFile(path);
-
-                Rotate(path);
+                if (!_prepared)
+                {
+                    Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+                    MigrateLegacyFile(path);
+                    // 启动时先看一眼：上一次运行可能已经把文件写满了。
+                    Rotate(path);
+                    _writesSinceRotateCheck = 0;
+                    _prepared = true;
+                }
+                // 轮转按批检查：上限 512 KB，隔 64 行看一次最多多写几行，够用。
+                else if (++_writesSinceRotateCheck >= 64)
+                {
+                    _writesSinceRotateCheck = 0;
+                    Rotate(path);
+                }
 
                 Append(path, $"{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}  {message}{Environment.NewLine}");
             }
         }
         catch
         {
-            // 日志写不了不能影响主流程。
+            // 写失败不能影响主流程；下一次重新走一遍准备工作——
+            // 目录可能被清理软件删了、文件可能被挪走，卡在「已准备」会让日志永远静默。
+            _prepared = false;
         }
     }
 

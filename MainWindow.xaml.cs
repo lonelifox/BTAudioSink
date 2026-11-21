@@ -645,6 +645,9 @@ public partial class MainWindow : Window
         var stale = _devices.Where(device => !_audio.IsOpened(device.Id)).ToList();
         foreach (var device in stale)
         {
+            // 和 OnDeviceLost 一样先退订：留着订阅等于让一台已经不在列表里的模型
+            // 继续挂在窗口上，属于没意义的常驻引用。
+            device.PropertyChanged -= OnDevicePropertyChanged;
             _devices.Remove(device);
         }
 
@@ -885,6 +888,10 @@ public partial class MainWindow : Window
     {
         Dispatcher.BeginInvoke(DispatcherPriority.ApplicationIdle, new Action(() =>
         {
+            // 排到空闲之后用户可能已经点了外面把面板收起，
+            // 那就别再把一块已经停在屏幕外的窗口抢到前台——抢了会打断别的程序。
+            if (!_panelOpen) return;
+
             ForceForeground();
             Focus();
         }));
@@ -1070,6 +1077,21 @@ public partial class MainWindow : Window
     /// 所以改成：摆位回到 UI 线程（同线程调用不开销、顺序确定），帧时钟留在工作线程。
     /// </summary>
     private void FlyLoop(IntPtr handle, double scale, bool showing, int generation)
+    {
+        // 这是后台线程的入口，异常没人接：程序退出时 Dispatcher 已经关闭，
+        // BeginInvoke 会抛 InvalidOperationException，.NET Core 会因此直接终止进程。
+        // 而那些情况本来意味着「不用再画了」，安静退出即可。
+        try
+        {
+            RunFlyLoop(handle, scale, showing, generation);
+        }
+        catch (Exception ex)
+        {
+            AppLog.Write(Loc.Format("Log.FlyThreadExit", ex.GetType().Name));
+        }
+    }
+
+    private void RunFlyLoop(IntPtr handle, double scale, bool showing, int generation)
     {
         var clock = _flyClock;
         if (clock is null) return;
@@ -1419,6 +1441,8 @@ public partial class MainWindow : Window
     public void PrepareShutdown()
     {
         _shuttingDown = true;
+        // 先停动画线程：它还在往 Dispatcher 里投帧，而 Dispatcher 马上就要关了。
+        StopFlyAnimation();
         _app.Settings.Save();
         _audio.Dispose();
     }

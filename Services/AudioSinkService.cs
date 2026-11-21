@@ -202,16 +202,23 @@ public sealed class AudioSinkService : IDisposable
         if (_disposed) return false;
 
         Session? existing;
+        string? existingState = null;
         lock (_gate)
         {
-            _live.TryGetValue(deviceId, out existing);
+            // 读状态必须在锁内完成：手动断开走的是另一条路径（不受 _openGate 约束），
+            // 它可能刚把同一台设备 Dispose 掉。在锁外读 State 就是野指针访问，
+            // 进程会以 0xC0000005 直接终止，try/catch 拦不住（见类注释的铁律 2）。
+            if (_live.TryGetValue(deviceId, out existing))
+            {
+                existingState = ReadState(existing);
+            }
         }
 
         if (existing is not null)
         {
             // 界面显示的「未连接」可能已经过期（典型场景：断另一台时系统牵连报了 Closed）。
             // 这里绝不能默默 return —— 否则界面会永远停在「正在连接…」。
-            var realState = ReadState(existing);
+            var realState = existingState!;
             var opened = realState.Equals("Opened", StringComparison.OrdinalIgnoreCase);
             AppLog.Write(Loc.Format("Log.ConnectSkip", Display(deviceId), realState));
 
@@ -375,9 +382,10 @@ public sealed class AudioSinkService : IDisposable
             Loc.Format("Log.DisconnectTrace", Display(deviceId), before, error ?? "-", remaining,
                 othersBefore, othersAfter));
 
-        if (othersOpened.Count > 0)
+        // 「全部断开」时绝不能启动恢复：用户要的是全断，恢复任务只是给「断一台牵连另一台」准备的。
+        if (!_disconnectingAll && othersOpened.Count > 0)
         {
-            _ = RestoreCascadeAsync(othersOpened);
+            _ = RestoreCascadeQuietlyAsync(othersOpened);
         }
 
         if (error is not null)
@@ -426,6 +434,23 @@ public sealed class AudioSinkService : IDisposable
     }
 
     /// <summary>
+    /// 连带恢复的异常兜底。它是从「断开」的同步路径里发出去的，没人 await，
+    /// 异常一旦冒出去就成了未观察的任务异常——进程不会挂，但恢复失败这件事会无影无踪。
+    /// 这里接住并记一行，至少事后能在日志里看到。
+    /// </summary>
+    private async Task RestoreCascadeQuietlyAsync(List<string> ids)
+    {
+        try
+        {
+            await RestoreCascadeAsync(ids);
+        }
+        catch (Exception ex)
+        {
+            AppLog.Write(Loc.Format("Log.CascadeRestoreFailed", ex.GetType().Name, ex.Message));
+        }
+    }
+
+    /// <summary>
     /// 断开一台会把同一适配器上其它设备的连接状态一起打成 Closed（系统行为，实测确认），
     /// 但另一台的音频流并不一定停。这里把被牵连的设备重新打开，恢复成一个有效句柄：
     /// 界面上它保持「已连接」，之后想断它也能真的断掉。
@@ -437,16 +462,18 @@ public sealed class AudioSinkService : IDisposable
 
         foreach (var id in ids)
         {
+            // 等待期间用户点了「全部断开」：这批恢复就不该再跑，否则会把刚断掉的设备又连回去。
+            if (_disconnectingAll) return;
+
             bool opened;
             bool alive;
             lock (_gate)
             {
                 alive = _live.TryGetValue(id, out var session);
                 opened = alive && ReadState(session!).Equals("Opened", StringComparison.OrdinalIgnoreCase);
-            }
 
-            lock (_gate)
-            {
+                // 检查与解除标记放在同一把锁里：中间不能有窗口期，
+                // 否则这期间收到的状态回调仍会被当成连带反应丢掉。
                 _restoring.Remove(id);
             }
 
