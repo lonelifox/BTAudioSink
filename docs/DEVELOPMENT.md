@@ -116,6 +116,26 @@ DWM 取走下一帧），拿到帧就算一次进度、把坐标投给 UI 线程
 开关面板而变长；真出现卡顿则留下带数字的证据。阈值 12ms 的取法：165Hz 屏正常 6.1ms、60Hz 屏
 16.7ms，12ms 落在两者之间，只有明显跨过一帧以上才记。
 
+### 后台窗口的可见性
+
+面板收起后窗口不 `Hide()`、只是停在所有屏幕之外，所以它在系统看来一直是 `WS_VISIBLE` 的顶层窗口。
+任务栏由 `ShowInTaskbar="False"` 生成的隐藏 owner 挡住，但任务视图和不少第三方切换器只按
+「可见顶层窗口」筛选，会把它列成一张空白卡片。
+
+`OnSourceInitialized` 里给窗口补上 `WS_EX_TOOLWINDOW`（`ApplyToolWindowStyle`），系统层面就不再
+把它计入切换列表。要点：
+
+- 必须赶在首次 `Show()` 之前设。之后系统已经按旧样式记过账，要再清就得靠一次非客户区重建。
+- 只做 `exStyle | WS_EX_TOOLWINDOW`，不能覆盖 `WS_EX_TOPMOST`，否则面板会被别的窗口盖住。
+- 改完必须调一次带 `SWP_FRAMECHANGED` 的 `SetWindowPos`，否则样式不生效。
+- `ShowInTaskbar="False"` 保留：两者互补，owner 关系还负责窗口层级。
+- 代价：失去 Aero Peek、任务栏缩略图和 Win+方向键贴靠，本应用都不需要。
+
+「屏幕外」这个坐标是按当前虚拟屏算的，**会随显示器配置失效**：插上右侧外接屏、改分辨率、改缩放，
+旧位置可能落进新可视区，面板就变成关着却挂在屏幕上。所以同时监听 `SystemEvents.DisplaySettingsChanged`
+和窗口的 `DpiChanged`，收到后重算一次（`ReparkIfHidden`）。只在面板没打开、也没有动画在跑时重算——
+打开时位置归托盘定位逻辑管，动画期间坐标归动画独占。
+
 ## 项目结构
 
 ```

@@ -62,6 +62,12 @@ public partial class MainWindow : Window
         // Mica 必须等窗口真正显示后再调，SourceInitialized 阶段 DWM 会拒绝。
         Loaded += OnWindowLoaded;
 
+        // 插拔显示器、改分辨率都会让「屏幕外」那个位置落进新的可视区，
+        // 窗口就变成关着却挂在屏幕上。收到通知重算一次。
+        Microsoft.Win32.SystemEvents.DisplaySettingsChanged += OnDisplaySettingsChanged;
+        // 换屏或改缩放时 DPI 会变，系统也会按比例把窗口挪一次，同样要重算。
+        DpiChanged += OnWindowDpiChanged;
+
         // 点窗口外面就收起——托盘弹窗的基本行为。
         Deactivated += OnWindowDeactivated;
         PreviewKeyDown += (_, e) =>
@@ -763,6 +769,11 @@ public partial class MainWindow : Window
         // 句柄就绪后才能调 DWM，构造函数里调用拿不到 HWND。
         ApplyWindowChromeColor();
         ApplyWindowIcon();
+
+        // 必须赶在首次 Show 之前：WPF 只在 HwndSource 创建阶段整体写一次窗口样式，
+        // 之后再改不会被它覆盖，但也别拖到 Show 之后——那时系统已经按旧样式
+        // 把这个窗口记进了切换列表，得靠一次非客户区重建才能清掉。
+        ApplyToolWindowStyle();
     }
 
     private Forms.Screen? _trayScreen;
@@ -816,6 +827,58 @@ public partial class MainWindow : Window
         Show();
         UpdateLayout();
         PlaceWindow(left, top);
+    }
+
+    /// <summary>
+    /// 让窗口退出任务栏、Alt+Tab、任务视图和第三方切换器的列表。
+    ///
+    /// 面板收起后窗口只是被搬到屏幕外，仍然是 WS_VISIBLE 的顶层窗口：任务栏靠
+    /// ShowInTaskbar=False 那个隐藏 owner 挡住了，但任务视图和不少切换器只按
+    /// 「可见顶层窗口」筛选，会把它显示成一个空白卡片。加上 WS_EX_TOOLWINDOW
+    /// 之后系统层面就把它排除在切换列表之外，代价只有一次非客户区重建。
+    ///
+    /// 它同时保留了 ShowInTaskbar=False 的 owner 关系——两者互补，别去掉任一个。
+    /// 只加标记、不动 WS_EX_TOPMOST，否则面板会被别的窗口盖住。
+    /// </summary>
+    private void ApplyToolWindowStyle()
+    {
+        var handle = new WindowInteropHelper(this).Handle;
+        if (handle == IntPtr.Zero) return;
+
+        var exStyle = GetWindowLongPtr(handle, GwlExStyle).ToInt64();
+        if ((exStyle & WsExToolWindow) != 0) return;
+
+        SetWindowLongPtr(handle, GwlExStyle, new IntPtr(exStyle | WsExToolWindow));
+
+        // 改完要显式通知一次，否则窗口管理器仍按旧样式记账，切换器里还留着。
+        // 只在窗口屏外时走一次，不在动画路径上。
+        SetWindowPos(handle, IntPtr.Zero, 0, 0, 0, 0,
+            SwpNoMove | SwpNoSize | SwpNoZOrder | SwpNoActivate | SwpFrameChanged);
+    }
+
+    /// <summary>
+    /// 屏幕布局变了之后重算屏外位置。
+    ///
+    /// 只在面板没打开、也没有动画在跑的时候做：打开时位置归托盘定位逻辑管，
+    /// 动画期间坐标归动画独占，这时候插一脚会让面板直接跳到别处。
+    /// </summary>
+    private void ReparkIfHidden()
+    {
+        if (!_parked || _panelOpen || _flyoutAnimating) return;
+        ParkOffscreen();
+    }
+
+    private void OnDisplaySettingsChanged(object? sender, EventArgs e)
+    {
+        // SystemEvents 在系统线程上抛，动窗口必须回 UI 线程。
+        Dispatcher.BeginInvoke(new Action(ReparkIfHidden));
+    }
+
+    private void OnWindowDpiChanged(object sender, DpiChangedEventArgs e)
+    {
+        // 延后一拍：WPF 自己也在这时候按新旧 DPI 调整窗口位置，
+        // 抢在它前面算出来的坐标马上就会被它改掉。
+        Dispatcher.BeginInvoke(new Action(ReparkIfHidden));
     }
 
     /// <summary>
@@ -1274,8 +1337,21 @@ public partial class MainWindow : Window
     }
 
     private const uint SwpNoSize = 0x0001;
+    private const uint SwpNoMove = 0x0002;
     private const uint SwpNoZOrder = 0x0004;
     private const uint SwpNoActivate = 0x0010;
+    private const uint SwpFrameChanged = 0x0020;
+
+    private const int GwlExStyle = -20;
+
+    /// <summary>带上它，窗口就不出现在任务栏、Alt+Tab 和任务视图里。</summary>
+    private const long WsExToolWindow = 0x00000080;
+
+    [DllImport("user32.dll", EntryPoint = "GetWindowLongPtrW", SetLastError = true)]
+    private static extern IntPtr GetWindowLongPtr(IntPtr hWnd, int nIndex);
+
+    [DllImport("user32.dll", EntryPoint = "SetWindowLongPtrW", SetLastError = true)]
+    private static extern IntPtr SetWindowLongPtr(IntPtr hWnd, int nIndex, IntPtr dwNewLong);
 
     [DllImport("user32.dll", SetLastError = true)]
     private static extern bool SetWindowPos(
@@ -1443,6 +1519,11 @@ public partial class MainWindow : Window
         _shuttingDown = true;
         // 先停动画线程：它还在往 Dispatcher 里投帧，而 Dispatcher 马上就要关了。
         StopFlyAnimation();
+
+        // SystemEvents 是静态事件，不退订会把已关闭的窗口吊在系统事件上。
+        Microsoft.Win32.SystemEvents.DisplaySettingsChanged -= OnDisplaySettingsChanged;
+        DpiChanged -= OnWindowDpiChanged;
+
         _app.Settings.Save();
         _audio.Dispose();
     }
