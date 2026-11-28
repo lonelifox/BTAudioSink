@@ -91,7 +91,7 @@ public static class BluetoothLink
         }
         catch (Exception ex)
         {
-            AppLog.Write(Loc.Format("Log.DetailQueryFailed", ex.GetType().Name, ex.Message));
+            AppLog.Write(Loc.LogFormat("Log.DetailQueryFailed", ex.GetType().Name, ex.Message));
             return null;
         }
 
@@ -159,7 +159,7 @@ public static class BluetoothLink
         }
         catch (Exception ex)
         {
-            AppLog.Write(Loc.Format("Log.LinkQueryFailed", ex.GetType().Name, ex.Message));
+            AppLog.Write(Loc.LogFormat("Log.LinkQueryFailed", ex.GetType().Name, ex.Message));
             return BluetoothLinkState.Unknown;
         }
 

@@ -89,6 +89,9 @@ public partial class TrayMenuWindow : Window
             StartupToggle.IsChecked = _app.Settings.StartWithWindows;
 
             AnimationsToggle.IsChecked = _app.Settings.AnimationsEnabled;
+
+            // 看的是进程真实权限，不是设置里记的意图——两者可能不一致。
+            AdminToggle.IsChecked = App.IsElevated;
             AnimationsToggle.ToolTip = Loc.Get("Tray.AnimationsTip");
 
             // 语言：单选钮的选中态就是当前语言。设值会触发 Checked，
@@ -251,6 +254,20 @@ public partial class TrayMenuWindow : Window
     }
 
     /// <summary>面板动画总开关。改完立刻落盘，下次弹窗就按新设置走。</summary>
+    private void OnAdminChanged(object sender, RoutedEventArgs e)
+    {
+        if (_loading) return;
+
+        bool wanted = AdminToggle.IsChecked == true;
+
+        // 切换会重启进程（成功时当前实例直接退出），返回 false 说明用户在 UAC 里取消了。
+        if (_app.SetRunAsAdmin(wanted)) return;
+
+        _loading = true;
+        AdminToggle.IsChecked = App.IsElevated;
+        _loading = false;
+    }
+
     private void OnAnimationsChanged(object sender, RoutedEventArgs e)
     {
         if (_loading) return;

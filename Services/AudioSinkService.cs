@@ -80,7 +80,8 @@ public sealed class AudioSinkService : IDisposable
     public event Action? EnumerationCompleted;
 
     /// <summary>只发给界面；文件日志由窗口的 AppendLog 统一落盘，避免重复写入。</summary>
-    public event Action<string>? Log;
+    /// <summary>（英文, 中文）。英文进日志文件，中文只用于界面并排显示，可为 null。</summary>
+    public event Action<string, string?>? Log;
 
     public void Start()
     {
@@ -94,8 +95,8 @@ public sealed class AudioSinkService : IDisposable
         }
         catch (Exception ex)
         {
-            Report(Loc.Format("Log.ScanFailed", ex.Message));
-            Report(Loc.Get("Log.ScanHint"));
+            ReportKey("Log.ScanFailed", ex.Message);
+            ReportKey("Log.ScanHint");
         }
     }
 
@@ -107,7 +108,7 @@ public sealed class AudioSinkService : IDisposable
     {
         if (_disposed) return;
 
-        AppLog.Write(Loc.Get("Log.RefreshWatcher"));
+        AppLog.Write(Loc.LogText("Log.RefreshWatcher"));
         StopWatcher();
         Start();
     }
@@ -126,7 +127,7 @@ public sealed class AudioSinkService : IDisposable
         }
         catch (Exception ex)
         {
-            AppLog.Write(Loc.Format("Log.StopWatcherFailed", ex.GetType().Name, ex.Message));
+            AppLog.Write(Loc.LogFormat("Log.StopWatcherFailed", ex.GetType().Name, ex.Message));
         }
         finally
         {
@@ -134,7 +135,11 @@ public sealed class AudioSinkService : IDisposable
         }
     }
 
-    private void Report(string message) => Log?.Invoke(message);
+    private void Report(string message) => Log?.Invoke(message, null);
+
+    /// <summary>按文案键上报，界面双语、日志只写英文。</summary>
+    private void ReportKey(string key, params object?[] args) =>
+        Log?.Invoke(Loc.Format(key, args), null);
 
     public bool IsConnected(string deviceId)
     {
@@ -220,21 +225,21 @@ public sealed class AudioSinkService : IDisposable
             // 这里绝不能默默 return —— 否则界面会永远停在「正在连接…」。
             var realState = existingState!;
             var opened = realState.Equals("Opened", StringComparison.OrdinalIgnoreCase);
-            AppLog.Write(Loc.Format("Log.ConnectSkip", Display(deviceId), realState));
+            AppLog.Write(Loc.LogFormat("Log.ConnectSkip", Display(deviceId), realState));
 
             if (opened)
             {
-                Report(Loc.Format("Log.StillConnected", Display(deviceId)));
+                ReportKey("Log.StillConnected", Display(deviceId));
                 ConnectionChanged?.Invoke(deviceId, true, DeviceStatus.Connected, null);
                 return true;
             }
 
             // 对象还在但已经不是 Opened：先拆干净，再走完整重连。
-            Report(Loc.Format("Log.StaleObject", Display(deviceId), realState));
+            ReportKey("Log.StaleObject", Display(deviceId), realState);
             Drop(deviceId);
         }
 
-        Report(Loc.Format("Log.ConnectStart", Display(deviceId)));
+        ReportKey("Log.ConnectStart", Display(deviceId));
 
         AudioPlaybackConnection? connection;
         try
@@ -243,13 +248,13 @@ public sealed class AudioSinkService : IDisposable
         }
         catch (Exception ex)
         {
-            Report(Loc.Format("Log.CreateFailed", ex.Message));
+            ReportKey("Log.CreateFailed", ex.Message);
             return false;
         }
 
         if (connection is null)
         {
-            Report(Loc.Get("Log.NotSupported"));
+            ReportKey("Log.NotSupported");
             return false;
         }
 
@@ -269,8 +274,7 @@ public sealed class AudioSinkService : IDisposable
             _live[deviceId] = session;
         }
 
-        AppLog.Write(Loc.Format("Log.SessionCreated", Display(deviceId),
-            RuntimeHelpers.GetHashCode(connection), deviceId));
+        AppLog.Write(Loc.LogFormat("Log.SessionCreated", Display(deviceId)));
 
         try
         {
@@ -280,19 +284,19 @@ public sealed class AudioSinkService : IDisposable
 
             if (result.Status == AudioPlaybackConnectionOpenResultStatus.Success)
             {
-                Report(Loc.Format("Log.ConnectOk", Display(deviceId), ReadState(session)));
+                ReportKey("Log.ConnectOk", Display(deviceId), ReadState(session));
                 ConnectionChanged?.Invoke(deviceId, true, DeviceStatus.Connected, null);
                 return true;
             }
 
-            Report(Loc.Format("Log.ConnectFailed", Display(deviceId), DescribeFailure(result)));
+            ReportKey("Log.ConnectFailed", Display(deviceId), DescribeFailure(result));
             Drop(deviceId);
             ConnectionChanged?.Invoke(deviceId, false, DeviceStatus.ConnectFailed, null);
             return false;
         }
         catch (Exception ex)
         {
-            Report(Loc.Format("Log.ConnectError", Display(deviceId), ex.GetType().Name, ex.Message));
+            ReportKey("Log.ConnectError", Display(deviceId), ex.GetType().Name, ex.Message);
             Drop(deviceId);
             ConnectionChanged?.Invoke(deviceId, false, DeviceStatus.ConnectFailed, null);
             return false;
@@ -317,7 +321,7 @@ public sealed class AudioSinkService : IDisposable
             if (!_live.Remove(deviceId, out session))
             {
                 detail = Loc.Get("Status.Disconnected");
-                AppLog.Write(Loc.Format("Log.DisconnectNoSession", Display(deviceId)));
+                AppLog.Write(Loc.LogFormat("Log.DisconnectNoSession", Display(deviceId)));
                 ConnectionChanged?.Invoke(deviceId, false, DeviceStatus.Disconnected, null);
                 return true;
             }
@@ -344,7 +348,7 @@ public sealed class AudioSinkService : IDisposable
             }
             catch (Exception ex)
             {
-                AppLog.Write(Loc.Format("Log.UnsubscribeFailed", Display(deviceId), ex.GetType().Name, ex.Message));
+                AppLog.Write(Loc.LogFormat("Log.UnsubscribeFailed", Display(deviceId), ex.GetType().Name, ex.Message));
             }
         }
 
@@ -379,7 +383,7 @@ public sealed class AudioSinkService : IDisposable
         }
 
         AppLog.Write(
-            Loc.Format("Log.DisconnectTrace", Display(deviceId), before, error ?? "-", remaining,
+            Loc.LogFormat("Log.DisconnectTrace", Display(deviceId), before, error ?? "-", remaining,
                 othersBefore, othersAfter));
 
         // 「全部断开」时绝不能启动恢复：用户要的是全断，恢复任务只是给「断一台牵连另一台」准备的。
@@ -391,7 +395,7 @@ public sealed class AudioSinkService : IDisposable
         if (error is not null)
         {
             detail = Loc.Format("Fail.ConnectionMayStillBeActive", error);
-            Report(Loc.Format("Log.DisconnectFailedDetail", Display(deviceId), detail));
+            ReportKey("Log.DisconnectFailedDetail", Display(deviceId), detail);
             ConnectionChanged?.Invoke(deviceId, true, DeviceStatus.DisconnectFailed, detail);
             return false;
         }
@@ -446,7 +450,7 @@ public sealed class AudioSinkService : IDisposable
         }
         catch (Exception ex)
         {
-            AppLog.Write(Loc.Format("Log.CascadeRestoreFailed", ex.GetType().Name, ex.Message));
+            AppLog.Write(Loc.LogFormat("Log.CascadeRestoreFailed", ex.GetType().Name, ex.Message));
         }
     }
 
@@ -484,14 +488,14 @@ public sealed class AudioSinkService : IDisposable
 
             if (opened)
             {
-                AppLog.Write(Loc.Format("Log.CascadeCheck", Display(id)));
+                AppLog.Write(Loc.LogFormat("Log.CascadeCheck", Display(id)));
                 // 之前为了不刷界面而压下的状态，这里补一次真实回推。
                 ConnectionChanged?.Invoke(id, true, DeviceStatus.Connected, null);
                 continue;
             }
 
-            AppLog.Write(Loc.Format("Log.CascadeRestore", Display(id)));
-            Report(Loc.Format("Log.CascadeRestored", Display(id)));
+            AppLog.Write(Loc.LogFormat("Log.CascadeRestore", Display(id)));
+            ReportKey("Log.CascadeRestored", Display(id));
 
             Drop(id);
             await ConnectAsync(id);
@@ -552,7 +556,7 @@ public sealed class AudioSinkService : IDisposable
         }
         catch (Exception ex)
         {
-            AppLog.Write(Loc.Format("Log.ReleaseFailed", ex.GetType().Name, ex.Message));
+            AppLog.Write(Loc.LogFormat("Log.ReleaseFailed", ex.GetType().Name, ex.Message));
         }
     }
 
@@ -567,7 +571,7 @@ public sealed class AudioSinkService : IDisposable
             // 已被本程序处置的连接不会再出现在 _live 里；此时绝不能去读它的 State。
             if (!_live.TryGetValue(deviceId, out var session))
             {
-                AppLog.Write(Loc.Format("Log.StateCallbackReleased", Display(deviceId)));
+                AppLog.Write(Loc.LogFormat("Log.StateCallbackReleased", Display(deviceId)));
                 return;
             }
 
@@ -587,11 +591,11 @@ public sealed class AudioSinkService : IDisposable
         if (restoring)
         {
             // 这一条是「断另一台」的连带反应，设备其实还在响；别拿去把界面刷成未连接。
-            AppLog.Write(Loc.Format("Log.StateCallbackCascade", Display(deviceId), state, others));
+            AppLog.Write(Loc.LogFormat("Log.StateCallbackCascade", Display(deviceId), state, others));
             return;
         }
 
-        AppLog.Write(Loc.Format("Log.StateCallback", Display(deviceId), state, others));
+        AppLog.Write(Loc.LogFormat("Log.StateCallback", Display(deviceId), state, others));
         ConnectionChanged?.Invoke(deviceId, opened,
             opened ? DeviceStatus.Connected : DeviceStatus.Disconnected, null);
     }
@@ -599,7 +603,7 @@ public sealed class AudioSinkService : IDisposable
     /// <summary>把除 excludeId 之外所有活着的连接的状态拼成一行，供日志对比。调用方需持有 _gate。</summary>
     private string SnapshotLocked(string excludeId)
     {
-        if (_live.Count <= 1) return Loc.Get("Log.NoneShort");
+        if (_live.Count <= 1) return Loc.LogText("Log.NoneShort");
 
         var parts = new List<string>(_live.Count);
         foreach (var pair in _live)
@@ -607,7 +611,7 @@ public sealed class AudioSinkService : IDisposable
             if (pair.Key == excludeId) continue;
             parts.Add($"{Display(pair.Key)}={ReadState(pair.Value)}");
         }
-        return parts.Count == 0 ? Loc.Get("Log.NoneShort") : string.Join(", ", parts);
+        return parts.Count == 0 ? Loc.LogText("Log.NoneShort") : string.Join(", ", parts);
     }
 
     private static string DescribeFailure(AudioPlaybackConnectionOpenResult result) => result.Status switch
@@ -651,7 +655,7 @@ public sealed class AudioSinkService : IDisposable
 
     private void OnRemoved(DeviceWatcher sender, DeviceInformationUpdate update)
     {
-        AppLog.Write(Loc.Format("Log.DeviceRemovedSys", Display(update.Id)));
+        AppLog.Write(Loc.LogFormat("Log.DeviceRemovedSys", Display(update.Id)));
         lock (_gate)
         {
             _containers.Remove(update.Id);

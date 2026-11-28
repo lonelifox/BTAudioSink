@@ -1,5 +1,8 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.ComponentModel;
+using System.Diagnostics;
+using System.Security.Principal;
 using System.Drawing;
 using System.Drawing.Drawing2D;
 using System.IO;
@@ -100,6 +103,16 @@ public partial class App : System.Windows.Application
         ApplyLanguage(Settings.Language, save: false);
         // 以注册表实际状态为准，避免用户在任务管理器里删了自启项后界面还显示勾选。
         Settings.StartWithWindows = StartupManager.IsEnabled();
+
+        // 开关里勾了「以管理员身份运行」，但当前不是管理员：提权重启自己。
+        // 用户在 UAC 里点取消的话，本次就以普通权限继续，并把开关清掉——
+        // 否则每次开机都弹一次 UAC，还永远弹不成功。
+        if (Settings.RunAsAdmin && !IsElevated)
+        {
+            if (Relaunch(elevated: true)) return;
+            Settings.RunAsAdmin = false;
+            Settings.Save();
+        }
 
         // 上次开 Mica 后没正常退出，多半是材质没渲染出来导致窗口全黑。
         // 先关掉，让用户至少能看到界面。
@@ -394,9 +407,75 @@ public partial class App : System.Windows.Application
             _tray.Icon = next;
         }
 
-        _tray.Text = connectedCount > 0
-            ? Loc.Format("Tray.Tip.Count", connectedCount)
-            : Loc.Get("Tray.Tip.None");
+        // 托盘悬停只显示标题，不带连接数——连接状态看图标本身就够了。
+        _tray.Text = "BTAudioSink";
+    }
+
+    // ---------- 管理员运行 ----------
+
+    private static bool? _elevated;
+
+    /// <summary>当前进程是否是管理员。第一次调用后缓存，启动期间权限不会变。</summary>
+    public static bool IsElevated => _elevated ??=
+        new WindowsPrincipal(WindowsIdentity.GetCurrent()).IsInRole(WindowsBuiltInRole.Administrator);
+
+    /// <summary>
+    /// 设置「以管理员身份运行」。已经处于目标状态就直接返回；
+    /// 否则重启自己（提权会弹 UAC，降权要借 explorer 中转）。
+    /// 返回 false 表示用户取消了授权，调用方应把开关拨回去。
+    /// </summary>
+    public bool SetRunAsAdmin(bool enabled)
+    {
+        Settings.RunAsAdmin = enabled;
+        Settings.Save();
+
+        if (IsElevated == enabled) return true;
+
+        if (Relaunch(enabled)) return true;
+
+        Settings.RunAsAdmin = IsElevated;
+        Settings.Save();
+        return false;
+    }
+
+    /// <summary>重启自己。成功返回 true 并开始退出当前实例。</summary>
+    private bool Relaunch(bool elevated)
+    {
+        string? exe = Environment.ProcessPath;
+        if (string.IsNullOrEmpty(exe)) return false;
+
+        try
+        {
+            if (elevated)
+            {
+                Process.Start(new ProcessStartInfo(exe)
+                {
+                    UseShellExecute = true,
+                    Verb = "runas",
+                });
+            }
+            else
+            {
+                // 提权进程无法「降权」自己，只能请 explorer 以当前登录用户重新拉起。
+                Process.Start(new ProcessStartInfo("explorer.exe", $"\"{exe}\"")
+                {
+                    UseShellExecute = true,
+                });
+            }
+
+            Shutdown();
+            return true;
+        }
+        catch (Win32Exception)
+        {
+            // UAC 被取消：这是正常操作，不记成错误。
+            return false;
+        }
+        catch (Exception ex)
+        {
+            AppLog.Write($"Relaunch failed: {ex.Message}");
+            return false;
+        }
     }
 
     /// <summary>两种连接状态各留一枚托盘图标，DPI 变了才重画。</summary>
@@ -436,7 +515,7 @@ public partial class App : System.Windows.Application
 
         try
         {
-            AppLog.Write(Loc.Get("Log.ExitStart"));
+            AppLog.Write(Loc.LogText("Log.ExitStart"));
             // 关掉音频连接可能要几百毫秒（蓝牙链路要拆），放在后面也没关系，
             // 但一定不能让它把 Shutdown 挡掉。
             _main?.PrepareShutdown();
@@ -449,11 +528,11 @@ public partial class App : System.Windows.Application
                 _tray.Dispose();
                 _tray = null;
             }
-            AppLog.Write(Loc.Get("Log.ExitDone"));
+            AppLog.Write(Loc.LogText("Log.ExitDone"));
         }
         catch (Exception ex)
         {
-            AppLog.Write(Loc.Format("Log.ExitFailed", ex.GetType().Name, ex.Message));
+            AppLog.Write(Loc.LogFormat("Log.ExitFailed", ex.GetType().Name, ex.Message));
         }
         finally
         {
@@ -558,6 +637,10 @@ public partial class App : System.Windows.Application
             if (args.Button == Forms.MouseButtons.Left) ToggleMainFlyout();
             else if (args.Button == Forms.MouseButtons.Right) ShowTrayMenu();
         };
+
+        // 建好后立刻按当前状态同步一次：图标要反映「有没有连接」，
+        // 否则启动时已连接的情况会一直顶着未连接的图标。
+        UpdateTrayState(ConnectedCount);
     }
 
     /// <summary>

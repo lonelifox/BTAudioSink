@@ -1,4 +1,4 @@
-; BTAudioSink 安装脚本（Inno Setup 6）
+﻿; BTAudioSink 安装脚本（Inno Setup 6）
 ;
 ; 定位：按用户安装，不弹 UAC。
 ; 这个程序本来就是单用户工具——开机自启写的是 HKCU 注册表（不需要管理员），
@@ -9,7 +9,7 @@
 ; 依赖：publish-installer 目录（由 dotnet publish 生成，见 README）
 
 #define AppName "BTAudioSink"
-#define AppVersion "1.2.0"
+#define AppVersion "1.3.0"
 #define AppPublisher "HB"
 #define AppExeName "BTAudioSink.exe"
 #define AppUrl "https://github.com/lonelifox/BTAudioSink"

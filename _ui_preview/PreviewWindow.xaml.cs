@@ -55,7 +55,6 @@ public partial class PreviewWindow : Window
 
         // 列表里的文字是从代码取的（状态、按钮），得重新造一遍设备才会跟着换。
         SetDeviceCount(_deviceCount);
-        BadgeText.Text = Loc.Format("Ui.Badge.Count", 1);
         LastLogText.Text = Loc.Format("Log.WakeRetry", "大白", 45);
     }
 
@@ -194,7 +193,7 @@ public partial class PreviewWindow : Window
     public string RowAction(int index) => RowTextByTag(index, "Action");
 
     /// <summary>头部徽标的真实渲染文字。</summary>
-    public string Badge => BadgeText.Text;
+    public string Badge => "";   // 标题旁已不放连接数，保留属性只为断言不报错
 
     /// <summary>底栏那行日志的真实渲染文字。</summary>
     public string LastLog => LastLogText.Text;
@@ -259,8 +258,6 @@ public partial class PreviewWindow : Window
         sb.AppendLine($"  底栏分割线 右边缘={Right(FooterBar):0.#}");
         sb.AppendLine($"  日志按钮   右边缘={Right(LogButton):0.#} 宽={LogButton.ActualWidth:0.#}  " +
                       $"文字='{LogButton.Content}'");
-        sb.AppendLine($"  徽标 左={Left(BadgeText):0.#} 右={Right(BadgeText):0.#}  " +
-                      $"标题右边缘={Right(title):0.#}（徽标应紧跟标题）");
         sb.AppendLine($"  滚动条可见={FindChild<ScrollBar>(DeviceList)?.Visibility}");
 
         return sb.ToString();
