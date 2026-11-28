@@ -12,6 +12,7 @@
   <ItemGroup>
     <Compile Include="..\Behaviors\RevealBehavior.cs" Link="Behaviors\RevealBehavior.cs" />
     <Compile Include="..\Behaviors\RowClickToggle.cs" Link="Behaviors\RowClickToggle.cs" />
+    <Compile Include="..\Behaviors\SmoothScrollBehavior.cs" Link="Behaviors\SmoothScrollBehavior.cs" />
     <!-- 复用主工程的语言资源，离屏出的图才是真的界面，不是另画一遍 -->
     <Compile Include="..\Services\Loc.cs" Link="Services\Loc.cs" />
     <Page Include="..\Theme\Light.xaml" Link="Theme\Light.xaml" />

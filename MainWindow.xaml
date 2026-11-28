@@ -12,7 +12,7 @@
         Title="BTAudioSink"
         Icon="Assets/app.ico"
         Width="384"
-        Height="330"
+        Height="430"
         WindowStyle="None" ResizeMode="NoResize"
         WindowStartupLocation="Manual"
         ShowInTaskbar="False" Topmost="True" ShowActivated="False"
@@ -64,12 +64,6 @@
                        Foreground="{DynamicResource TextPrimaryBrush}"
                        VerticalAlignment="Center" />
 
-            <!-- 连接数紧挨软件名右边，中间用弹性列把它和刷新按钮推开 -->
-            <TextBlock Grid.Column="2" x:Name="BadgeText" Text="{DynamicResource Ui.Badge.None}"
-                       Margin="7,0,0,0" FontSize="11"
-                       VerticalAlignment="Center"
-                       Foreground="{DynamicResource TextTertiaryBrush}" />
-
             <Button Grid.Column="4" x:Name="RefreshButton" Style="{StaticResource IconButton}"
                     Content="&#xE72C;" Width="26" Height="26"
                     ToolTip="{DynamicResource Ui.RefreshTip}" Click="OnRefreshClick" />
@@ -82,13 +76,31 @@
             OverlayScrollViewer），加上外边距一共 14，和上下两处的边距对得上。
             卡片右边缘因此永远落在 370 这一条竖线上。
         -->
-        <Grid Grid.Row="1" Margin="14,10,8,0">
+        <ScrollViewer Grid.Row="1" Margin="14,10,8,4"
+                      Style="{StaticResource OverlayScrollViewer}"
+                      b:SmoothScrollBehavior.IsEnabled="True"
+                      PanningMode="VerticalOnly"
+                      VerticalScrollBarVisibility="Auto"
+                      HorizontalScrollBarVisibility="Disabled">
+            <!--
+                面板有两个方向：上面的「接收」是本机收音频（手机推过来），
+                下面的「输出」是本机送音频（耳机放出去）。方向相反，所以分区而不是混排，
+                否则用户分不清「这台设备是在给我送声音，还是在放我的声音」。
+            -->
+            <StackPanel Margin="0,0,6,0">
+                <Grid Margin="0,0,0,6">
+                    <TextBlock Text="{DynamicResource Ui.Section.Source}" FontSize="10.5" FontWeight="SemiBold"
+                               Foreground="{DynamicResource TextSecondaryBrush}" VerticalAlignment="Center" />
+                    <TextBlock x:Name="SourceCount" FontSize="10" HorizontalAlignment="Right"
+                               VerticalAlignment="Center" Margin="0,0,10,0" Visibility="Collapsed"
+                               Foreground="{DynamicResource TextTertiaryBrush}" />
+                </Grid>
+
             <TextBlock x:Name="EmptyHint" Visibility="Collapsed"
                        Text="{DynamicResource Ui.Empty}"
                        FontSize="11.5" LineHeight="20"
                        Foreground="{DynamicResource TextSecondaryBrush}"
-                       TextAlignment="Center" VerticalAlignment="Center"
-                       HorizontalAlignment="Center" />
+                       TextAlignment="Center" Margin="0,4,0,8" />
 
             <ListBox x:Name="DeviceList"
                      Background="Transparent" BorderThickness="0"
@@ -97,8 +109,8 @@
                      b:RowClickToggle.CollapseSelectedOnClick="True"
                      SelectionMode="Single"
                      ScrollViewer.HorizontalScrollBarVisibility="Disabled"
-                     ScrollViewer.VerticalScrollBarVisibility="Auto"
-                     VirtualizingPanel.ScrollUnit="Pixel">
+                     ScrollViewer.VerticalScrollBarVisibility="Disabled"
+                     VirtualizingPanel.IsVirtualizing="False">
                 <ListBox.Resources>
                     <!--
                         列表内部的 ScrollViewer 换成悬浮滚动条：
@@ -216,9 +228,222 @@
                         </Grid>
                     </DataTemplate>
                 </ListBox.ItemTemplate>
-            </ListBox>
+                </ListBox>
 
-        </Grid>
+                <!-- ===== 输出设备：本机 → 耳机 / 音箱 ===== -->
+                <Border Margin="0,14,0,0" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,1,0,0" />
+
+                <Grid Margin="0,10,0,6">
+                    <TextBlock Text="{DynamicResource Ui.Section.Output}" FontSize="10.5" FontWeight="SemiBold"
+                               Foreground="{DynamicResource TextSecondaryBrush}" VerticalAlignment="Center" />
+                    <TextBlock x:Name="OutputCount" FontSize="10" HorizontalAlignment="Right"
+                               VerticalAlignment="Center" Margin="0,0,10,0" Visibility="Collapsed"
+                               Foreground="{DynamicResource TextTertiaryBrush}" />
+                </Grid>
+
+                <TextBlock x:Name="OutputEmptyHint" Visibility="Collapsed"
+                           Text="{DynamicResource Ui.Output.Empty}"
+                           FontSize="11.5" LineHeight="18" TextWrapping="Wrap"
+                           Foreground="{DynamicResource TextSecondaryBrush}" Margin="0,2,0,6" />
+
+                <ListBox x:Name="OutputList"
+                         Background="Transparent" BorderThickness="0"
+                         FocusVisualStyle="{x:Null}"
+                         ItemContainerStyle="{StaticResource DeviceListItem}"
+                         b:RowClickToggle.CollapseSelectedOnClick="True"
+                         SelectionMode="Single"
+                         VirtualizingPanel.IsVirtualizing="False"
+                         ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                         ScrollViewer.VerticalScrollBarVisibility="Disabled">
+                    <ListBox.ItemTemplate>
+                        <DataTemplate>
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                </Grid.RowDefinitions>
+
+                                <Ellipse Grid.RowSpan="2" Width="7" Height="7" VerticalAlignment="Center">
+                                    <Ellipse.Style>
+                                        <Style TargetType="Ellipse">
+                                            <Setter Property="Fill" Value="{DynamicResource TextTertiaryBrush}" />
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding IsConnected}" Value="True">
+                                                    <Setter Property="Fill" Value="{DynamicResource SuccessBrush}" />
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </Ellipse.Style>
+                                </Ellipse>
+
+                                <TextBlock Grid.Column="1" Text="{Binding Name}" Margin="10,0,4,0"
+                                           FontSize="12.5" FontWeight="Medium"
+                                           Foreground="{DynamicResource TextPrimaryBrush}"
+                                           TextTrimming="CharacterEllipsis"
+                                           ToolTip="{Binding Name}" />
+
+                                <TextBlock Grid.Column="1" Grid.Row="1" Text="{Binding StatusText}"
+                                           Margin="10,2,4,0" FontSize="11"
+                                           Foreground="{DynamicResource TextSecondaryBrush}"
+                                           TextTrimming="CharacterEllipsis" />
+
+                                <!-- 编码 + 电量：都拿不到时整块隐藏 -->
+                                <StackPanel Grid.Column="2" Grid.RowSpan="2" Orientation="Horizontal"
+                                            VerticalAlignment="Center" Margin="0,0,8,0">
+                                    <StackPanel.Style>
+                                        <Style TargetType="StackPanel">
+                                            <Setter Property="Visibility" Value="Collapsed" />
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding HasInfo}" Value="True">
+                                                    <Setter Property="Visibility" Value="Visible" />
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </StackPanel.Style>
+
+                                    <TextBlock Text="{Binding CodecText}" FontSize="10"
+                                               VerticalAlignment="Center" Margin="0,0,6,0"
+                                               Foreground="{DynamicResource TextTertiaryBrush}">
+                                        <TextBlock.Style>
+                                            <Style TargetType="TextBlock">
+                                                <Setter Property="Visibility" Value="Collapsed" />
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding HasCodec}" Value="True">
+                                                        <Setter Property="Visibility" Value="Visible" />
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </TextBlock.Style>
+                                    </TextBlock>
+
+                                    <!-- 电池：圆角外壳 + 圆角电量条，低电量转红 -->
+                                    <Grid Width="21" Height="11" VerticalAlignment="Center" Margin="0,0,3,0">
+                                        <Grid.Style>
+                                            <Style TargetType="Grid">
+                                                <Setter Property="Visibility" Value="Collapsed" />
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding HasBattery}" Value="True">
+                                                        <Setter Property="Visibility" Value="Visible" />
+                                                    </DataTrigger>
+                                                    <!-- 超过一小时没更新的旧值：整块压暗，别让它冒充实时电量 -->
+                                                    <DataTrigger Binding="{Binding IsBatteryStale}" Value="True">
+                                                        <Setter Property="Opacity" Value="0.45" />
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </Grid.Style>
+
+                                        <Border Margin="0,0,2,0" CornerRadius="3" BorderThickness="1"
+                                                BorderBrush="{DynamicResource TextTertiaryBrush}" />
+
+                                        <Border Width="2" Height="5" CornerRadius="1"
+                                                HorizontalAlignment="Right"
+                                                Background="{DynamicResource TextTertiaryBrush}" />
+
+                                        <Border Margin="2,2,4,2" CornerRadius="1.5" HorizontalAlignment="Left"
+                                                Width="{Binding BatteryFillWidth}">
+                                            <Border.Style>
+                                                <Style TargetType="Border">
+                                                    <Setter Property="Background" Value="{DynamicResource SuccessBrush}" />
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding IsBatteryLow}" Value="True">
+                                                            <Setter Property="Background" Value="{DynamicResource DangerBrush}" />
+                                                        </DataTrigger>
+                                                        <!-- 旧值写在最后：触发器按顺序生效，后写的覆盖先写的。
+                                                             低电量红优先显示是没有意义的——电量本身都不可信了。 -->
+                                                        <DataTrigger Binding="{Binding IsBatteryStale}" Value="True">
+                                                            <Setter Property="Background" Value="{DynamicResource TextTertiaryBrush}" />
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </Border.Style>
+                                        </Border>
+                                    </Grid>
+
+                                    <TextBlock Text="{Binding BatteryText}" FontSize="10" Margin="2,0,0,0"
+                                               VerticalAlignment="Center"
+                                               Foreground="{DynamicResource TextTertiaryBrush}">
+                                        <TextBlock.Style>
+                                            <Style TargetType="TextBlock">
+                                                <Setter Property="Visibility" Value="Collapsed" />
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding HasBattery}" Value="True">
+                                                        <Setter Property="Visibility" Value="Visible" />
+                                                    </DataTrigger>
+                                                    <DataTrigger Binding="{Binding IsBatteryStale}" Value="True">
+                                                        <Setter Property="Opacity" Value="0.45" />
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </TextBlock.Style>
+                                    </TextBlock>
+                                </StackPanel>
+
+                                <Button Grid.Column="3" Grid.RowSpan="2"
+                                        Content="{Binding ActionText}"
+                                        Style="{StaticResource DeviceActionButton}"
+                                        IsEnabled="{Binding CanPress}"
+                                        Tag="{Binding}" Click="OnOutputActionClick"
+                                        ToolTip="{DynamicResource Ui.Device.ActionTip}" />
+
+                                <Border Grid.Row="2" Grid.ColumnSpan="4" Margin="0,9,0,0" Padding="0,9,0,0"
+                                        BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,1,0,0"
+                                        ClipToBounds="True" Visibility="Collapsed"
+                                        b:RevealBehavior.IsRevealed="{Binding IsSelected, RelativeSource={RelativeSource AncestorType=ListBoxItem}}">
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="*" />
+                                        </Grid.ColumnDefinitions>
+                                        <Grid.RowDefinitions>
+                                            <RowDefinition Height="Auto" />
+                                            <RowDefinition Height="Auto" />
+                                        </Grid.RowDefinitions>
+
+                                        <StackPanel Grid.Row="0" Grid.Column="0" Margin="0,0,10,8">
+                                            <TextBlock Text="{DynamicResource Ui.Detail.Address}" FontSize="10"
+                                                       Foreground="{DynamicResource TextTertiaryBrush}" />
+                                            <TextBlock Text="{Binding AddressText}" FontSize="11" Margin="0,2,0,0"
+                                                       FontFamily="Cascadia Mono, Consolas, monospace"
+                                                       Foreground="{DynamicResource TextPrimaryBrush}" />
+                                        </StackPanel>
+
+                                        <StackPanel Grid.Row="0" Grid.Column="1" Margin="0,0,0,8">
+                                            <TextBlock Text="{DynamicResource Ui.Output.Profile}" FontSize="10"
+                                                       Foreground="{DynamicResource TextTertiaryBrush}" />
+                                            <TextBlock Text="{Binding ProfileText}" FontSize="11" Margin="0,2,0,0"
+                                                       Foreground="{DynamicResource TextPrimaryBrush}" />
+                                        </StackPanel>
+
+                                        <StackPanel Grid.Row="1" Grid.Column="0" Margin="0,0,10,0">
+                                            <TextBlock Text="{DynamicResource Ui.Output.Control}" FontSize="10"
+                                                       Foreground="{DynamicResource TextTertiaryBrush}" />
+                                            <TextBlock Text="{Binding ControlText}" FontSize="11" Margin="0,2,0,0"
+                                                       Foreground="{DynamicResource TextPrimaryBrush}" />
+                                        </StackPanel>
+
+                                        <StackPanel Grid.Row="1" Grid.Column="1">
+                                            <TextBlock Text="{DynamicResource Ui.Output.Id}" FontSize="10"
+                                                       Foreground="{DynamicResource TextTertiaryBrush}" />
+                                            <TextBlock Text="{Binding IdText}" FontSize="11" Margin="0,2,0,0"
+                                                       FontFamily="Cascadia Mono, Consolas, monospace"
+                                                       Foreground="{DynamicResource TextPrimaryBrush}" />
+                                        </StackPanel>
+                                    </Grid>
+                                </Border>
+                            </Grid>
+                        </DataTemplate>
+                    </ListBox.ItemTemplate>
+                </ListBox>
+            </StackPanel>
+        </ScrollViewer>
 
         <!-- 底栏：日常只露最新一条日志，右边「日志」按钮用默认编辑器打开日志文件 -->
         <Border Grid.Row="2" Margin="14,8,14,12"

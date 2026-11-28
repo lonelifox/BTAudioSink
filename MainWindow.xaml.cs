@@ -26,6 +26,14 @@ public partial class MainWindow : Window
     private readonly AudioSinkService _audio = new();
     private readonly ObservableCollection<DeviceItem> _devices = new();
 
+    /// <summary>输出侧（本机 → 耳机 / 音箱）。与来源设备分开维护。</summary>
+    private readonly ObservableCollection<OutputDeviceItem> _outputs = new();
+    private bool _outputsLoading;
+
+    /// <summary>上一条日志与时间，用于压掉短时间内完全重复的内容。</summary>
+    private string? _lastLogMessage;
+    private DateTime _lastLogAt;
+
     /// <summary>用户在本次运行里主动断开的设备。手动断开就不该被自动重连拽回去，重启后按开关来。</summary>
     private readonly HashSet<string> _manualDisconnects = new();
 
@@ -48,11 +56,13 @@ public partial class MainWindow : Window
         DeviceList.ItemsSource = _devices;
         DeviceList.SelectionChanged += OnDeviceSelectionChanged;
 
+        OutputList.ItemsSource = _outputs;
+
         _audio.DeviceFound += OnDeviceFound;
         _audio.DeviceLost += OnDeviceLost;
         _audio.ConnectionChanged += OnConnectionChanged;
         _audio.EnumerationCompleted += OnEnumerationCompleted;
-        _audio.Log += AppendLog;
+        _audio.Log += (english, _) => AppendLog(english);
 
         // 语言一换，模型层那些「现取资源」的文字得重新通知界面。
         Loc.LanguageChanged += OnLanguageChanged;
@@ -75,11 +85,12 @@ public partial class MainWindow : Window
             if (e.Key == Key.Escape) HideFlyout();
         };
 
-        AppendLog(Loc.Get("Log.Started"));
+        AppendLogKey("Log.Started");
+        _ = RefreshOutputsAsync();
 
         if (_app.MicaAutoDisabled)
         {
-            AppendLog(Loc.Get("Log.MicaAutoDisabled"));
+            AppendLogKey("Log.MicaAutoDisabled");
         }
     }
 
@@ -99,12 +110,12 @@ public partial class MainWindow : Window
         {
             if (!ids.Contains(device.Id)) ids.Add(device.Id);
             _manualDisconnects.Remove(device.Id);
-            AppendLog(Loc.Format("Log.AutoReconnectOn", device.Name));
+            AppendLogKey("Log.AutoReconnectOn", device.Name);
         }
         else
         {
             ids.Remove(device.Id);
-            AppendLog(Loc.Format("Log.AutoReconnectOff", device.Name));
+            AppendLogKey("Log.AutoReconnectOff", device.Name);
         }
 
         _app.Settings.Save();
@@ -125,33 +136,33 @@ public partial class MainWindow : Window
         _app.Settings.UseMica = enabled;
         _app.Settings.Save();
         ApplyBackdrop();
-        AppendLog(Loc.Get(enabled ? "Log.MicaOn" : "Log.MicaOff"));
+        AppendLogKey(enabled ? "Log.MicaOn" : "Log.MicaOff");
     }
 
     public void AppendThemeLog(AppTheme mode)
     {
-        var text = mode switch
+        if (mode == AppTheme.Auto)
         {
-            AppTheme.Light => Loc.Get("Log.ThemeLight"),
-            AppTheme.Dark => Loc.Get("Log.ThemeDark"),
-            _ => Loc.Format("Log.ThemeAuto",
-                Loc.Get(_app.IsLightTheme ? "Log.ThemeCurrent.Light" : "Log.ThemeCurrent.Dark")),
-        };
-        AppendLog(text);
+            string sub = _app.IsLightTheme ? "Log.ThemeCurrent.Light" : "Log.ThemeCurrent.Dark";
+            AppendLog(Loc.Format("Log.ThemeAuto", Loc.Get(sub)));
+            return;
+        }
+
+        AppendLogKey(mode == AppTheme.Light ? "Log.ThemeLight" : "Log.ThemeDark");
     }
 
     /// <summary>托盘菜单切换开机自启动后调用，把结果写进运行日志。</summary>
     public void AppendStartupLog(bool enabled) =>
-        AppendLog(Loc.Get(enabled ? "Log.StartupOn" : "Log.StartupOff"));
+        AppendLogKey(enabled ? "Log.StartupOn" : "Log.StartupOff");
 
     /// <summary>托盘菜单切换面板动画后调用，把结果写进运行日志。</summary>
     public void AppendAnimationsLog(bool enabled) =>
-        AppendLog(Loc.Get(enabled ? "Log.AnimationsOn" : "Log.AnimationsOff"));
+        AppendLogKey(enabled ? "Log.AnimationsOn" : "Log.AnimationsOff");
 
     /// <summary>托盘菜单切换语言后调用，把结果写进运行日志。</summary>
     public void AppendLanguageLog(AppLanguage language) =>
-        AppendLog(Loc.Format("Log.LanguageChanged",
-            Loc.Get(language == AppLanguage.English ? "Language.Name.En" : "Language.Name.Zh")));
+        AppendLogKey("Log.LanguageChanged",
+            Loc.Get(language == AppLanguage.English ? "Language.Name.En" : "Language.Name.Zh"));
 
     // ---------- 语言 ----------
 
@@ -165,6 +176,8 @@ public partial class MainWindow : Window
     public void RefreshLocalizedText()
     {
         foreach (var device in _devices) device.RefreshLocalizedText();
+        foreach (var output in _outputs) output.RefreshLocalizedText();
+        UpdateOutputSection();
         UpdateBadge();
     }
 
@@ -184,7 +197,7 @@ public partial class MainWindow : Window
             item.PropertyChanged += OnDevicePropertyChanged;
 
             _devices.Add(item);
-            AppendLog(Loc.Format("Log.DeviceFound", name));
+            AppendLogKey("Log.DeviceFound", name);
             RefreshListState();
         }));
     }
@@ -198,7 +211,7 @@ public partial class MainWindow : Window
 
             device.PropertyChanged -= OnDevicePropertyChanged;
             _devices.Remove(device);
-            AppendLog(Loc.Format("Log.DeviceRemoved", device.Name));
+            AppendLogKey("Log.DeviceRemoved", device.Name);
             RefreshListState();
             UpdateBadge();
         }));
@@ -215,17 +228,17 @@ public partial class MainWindow : Window
 
                 if (_devices.Count == 0)
                 {
-                    AppendLog(Loc.Get("Log.NoDevice"));
+                    AppendLogKey("Log.NoDevice");
                     return;
                 }
 
                 if (_autoReconnectDone) return;
                 _autoReconnectDone = true;
-                StartAutoReconnect(Loc.Get("Log.AutoReason.Startup"));
+                StartAutoReconnect(Loc.LogText("Log.AutoReason.Startup"));
             }
             catch (Exception ex)
             {
-                AppendLog(Loc.Format("Log.AutoConnectError", ex.Message));
+                AppendLogKey("Log.AutoConnectError", ex.Message);
             }
         }));
     }
@@ -258,12 +271,12 @@ public partial class MainWindow : Window
         {
             if (_devices.Any(device => device.IsAutoReconnect))
             {
-                AppendLog(Loc.Get("Log.AutoSkip"));
+                AppendLogKey("Log.AutoSkip");
             }
             return;
         }
 
-        AppendLog(Loc.Format("Log.AutoStart", reason, targets.Count));
+        AppendLogKey("Log.AutoStart", reason, targets.Count);
         foreach (var device in targets)
         {
             _ = AutoConnectAsync(device);
@@ -319,7 +332,7 @@ public partial class MainWindow : Window
                     {
                         seen = BluetoothLinkState.NotLinked;
                         device.SetStatus(DeviceStatus.BluetoothNotConnected);
-                        AppendLog(Loc.Format("Log.LinkNotEstablished", name));
+                        AppendLogKey("Log.LinkNotEstablished", name);
                     }
 
                     if (capped)
@@ -329,13 +342,13 @@ public partial class MainWindow : Window
                     }
 
                     attempts++;
-                    AppendLog(Loc.Format("Log.WakeAttempt", name, attempts, MaxAutoAttempts));
+                    AppendLogKey("Log.WakeAttempt", name, attempts, MaxAutoAttempts);
 
                     await ConnectAutoAsync(device);
 
                     if (await WaitOpenedAsync(id))
                     {
-                        AppendLog(Loc.Format("Log.WakeSuccess", name));
+                        AppendLogKey("Log.WakeSuccess", name);
                         return;
                     }
 
@@ -344,12 +357,12 @@ public partial class MainWindow : Window
                     if (attempts >= MaxAutoAttempts)
                     {
                         capped = true;
-                        AppendLog(Loc.Format("Log.WakeFailedMax", name, MaxAutoAttempts));
+                        AppendLogKey("Log.WakeFailedMax", name, MaxAutoAttempts);
                     }
                     else
                     {
                         var wait = TimeSpan.FromSeconds(WakeBackoffSeconds(attempts));
-                        AppendLog(Loc.Format("Log.WakeRetry", name, wait.TotalSeconds));
+                        AppendLogKey("Log.WakeRetry", name, wait.TotalSeconds);
                         await Task.Delay(wait);
                     }
 
@@ -366,8 +379,8 @@ public partial class MainWindow : Window
                     capped = false;
 
                     AppendLog(link == BluetoothLinkState.Linked
-                        ? Loc.Format("Log.LinkEstablished", name)
-                        : Loc.Format("Log.LinkUnknown", name));
+                        ? Loc.LogFormat("Log.LinkEstablished", name)
+                        : Loc.LogFormat("Log.LinkUnknown", name));
                 }
 
                 if (capped)
@@ -377,13 +390,13 @@ public partial class MainWindow : Window
                 }
 
                 attempts++;
-                AppendLog(Loc.Format("Log.AutoAttempt", name, attempts, MaxAutoAttempts));
+                AppendLogKey("Log.AutoAttempt", name, attempts, MaxAutoAttempts);
 
                 await ConnectAutoAsync(device);
 
                 if (await WaitOpenedAsync(id))
                 {
-                    AppendLog(Loc.Format("Log.AutoSuccess", name));
+                    AppendLogKey("Log.AutoSuccess", name);
                     return;
                 }
 
@@ -391,7 +404,7 @@ public partial class MainWindow : Window
                 {
                     capped = true;
                     device.SetStatus(DeviceStatus.ConnectFailed);
-                    AppendLog(Loc.Format("Log.AutoFailedMax", name, MaxAutoAttempts));
+                    AppendLogKey("Log.AutoFailedMax", name, MaxAutoAttempts);
                 }
                 else
                 {
@@ -401,7 +414,7 @@ public partial class MainWindow : Window
         }
         catch (Exception ex)
         {
-            AppendLog(Loc.Format("Log.AutoConnectErrorDetail", name, ex.Message));
+            AppendLogKey("Log.AutoConnectErrorDetail", name, ex.Message);
         }
         finally
         {
@@ -474,7 +487,7 @@ public partial class MainWindow : Window
         // 已经有一条流程在盯这台设备了（它本来就在等链路/等重试），别插第二条。
         if (_autoRunning.Contains(device.Id)) return;
 
-        AppendLog(Loc.Format("Log.DisconnectedSchedule", device.Name, MaxAutoAttempts));
+        AppendLogKey("Log.DisconnectedSchedule", device.Name, MaxAutoAttempts);
         _ = ReconnectAfterDelayAsync(device);
     }
 
@@ -497,7 +510,7 @@ public partial class MainWindow : Window
     {
         if (await _audio.QueryLinkAsync(device.Id) == BluetoothLinkState.NotLinked)
         {
-            AppendLog(Loc.Format("Log.LinkHint", device.Name));
+            AppendLogKey("Log.LinkHint", device.Name);
         }
     }
 
@@ -531,7 +544,7 @@ public partial class MainWindow : Window
         {
             device.IsConnected = false;
             device.SetStatus(DeviceStatus.ConnectFailed);
-            AppendLog(Loc.Format("Log.ErrorDetail", device.Name, ex.Message));
+            AppendLogKey("Log.ErrorDetail", device.Name, ex.Message);
         }
         finally
         {
@@ -547,11 +560,11 @@ public partial class MainWindow : Window
         {
             // 用户明确要断开，本次运行内别自动连回来。
             _manualDisconnects.Add(device.Id);
-            AppendLog(Loc.Format("Log.Disconnected", device.Name));
+            AppendLogKey("Log.Disconnected", device.Name);
         }
         else
         {
-            AppendLog(Loc.Format("Log.DisconnectFailed", device.Name, detail));
+            AppendLogKey("Log.DisconnectFailed", device.Name, detail);
         }
 
         // 兜底校准：不依赖回调，直接问服务层现在的真实状态。
@@ -570,10 +583,8 @@ public partial class MainWindow : Window
             var device = _devices.FirstOrDefault(item => item.Id == id);
             if (device is null) return;
 
-            AppLog.Write(Loc.Format("Log.UiUpdate", device.Name,
-                Loc.Get(connected ? "Status.Connected" : "Status.Disconnected"),
-                detail ?? Loc.Get($"Status.{status}")));
-
+            // 这里原本每条状态变更都写一行「界面更新」日志，实际每条会重复两遍，
+            // 信息也和「状态回调」重复，直接去掉，日志只留真正有价值的事件。
             device.IsConnected = connected;
             device.SetStatus(status, detail);
 
@@ -636,7 +647,7 @@ public partial class MainWindow : Window
         }
         catch (Exception ex)
         {
-            AppendLog(Loc.Format("Log.DetailFailed", device.Name, ex.Message));
+            AppendLogKey("Log.DetailFailed", device.Name, ex.Message);
         }
     }
 
@@ -660,9 +671,10 @@ public partial class MainWindow : Window
         RefreshListState();
 
         _audio.Refresh();
+        _ = RefreshOutputsAsync();
         AppendLog(stale.Count > 0
-            ? Loc.Format("Log.Refresh", stale.Count)
-            : Loc.Get("Log.RefreshPlain"));
+            ? Loc.LogFormat("Log.Refresh", stale.Count)
+            : Loc.LogText("Log.RefreshPlain"));
     }
 
     /// <summary>
@@ -682,7 +694,7 @@ public partial class MainWindow : Window
 
             if (_audio.IsOpened(device.Id))
             {
-                AppendLog(Loc.Format("Log.ReconnectDisconnecting", device.Name));
+                AppendLogKey("Log.ReconnectDisconnecting", device.Name);
                 _audio.Disconnect(device.Id, out _);
                 // 让系统把链路收干净再重开，否则 OpenAsync 容易直接返回失败。
                 await Task.Delay(400);
@@ -699,18 +711,18 @@ public partial class MainWindow : Window
             if (opened)
             {
                 _manualDisconnects.Remove(device.Id);
-                AppendLog(Loc.Format("Log.Reconnected", device.Name));
+                AppendLogKey("Log.Reconnected", device.Name);
             }
             else
             {
-                AppendLog(Loc.Format("Log.ReconnectFailed", device.Name));
+                AppendLogKey("Log.ReconnectFailed", device.Name);
             }
         }
         catch (Exception ex)
         {
             device.IsConnected = false;
             device.SetStatus(DeviceStatus.ReconnectFailed);
-            AppendLog(Loc.Format("Log.ErrorDetail", device.Name, ex.Message));
+            AppendLogKey("Log.ErrorDetail", device.Name, ex.Message);
         }
         finally
         {
@@ -727,7 +739,7 @@ public partial class MainWindow : Window
         var opened = _audio.IsOpened(device.Id);
         if (device.IsConnected != opened)
         {
-            AppLog.Write(Loc.Format("Log.Calibrate", device.Name,
+            AppLog.Write(Loc.LogFormat("Log.Calibrate", device.Name,
                 Loc.Get(device.IsConnected ? "Status.Connected" : "Status.Disconnected"),
                 Loc.Get(opened ? "Status.Connected" : "Status.Disconnected")));
             device.IsConnected = opened;
@@ -757,8 +769,8 @@ public partial class MainWindow : Window
 
         var closed = _audio.DisconnectAll();
         AppendLog(closed > 0
-            ? Loc.Format("Log.DisconnectAll", closed)
-            : Loc.Get("Log.DisconnectAllNone"));
+            ? Loc.LogFormat("Log.DisconnectAll", closed)
+            : Loc.LogText("Log.DisconnectAllNone"));
     }
 
     // ---------- 窗口 ----------
@@ -909,6 +921,9 @@ public partial class MainWindow : Window
         _flyoutAnimating = true;
         _panelOpen = true;
         _shownAt = DateTime.UtcNow;
+
+        // 每次弹出都刷一次输出设备：电量/编码是外部状态，只在打开时取最新即可。
+        _ = RefreshOutputsAsync();
 
         var (targetLeft, targetTop) = TargetPosition(out var edge);
 
@@ -1150,7 +1165,7 @@ public partial class MainWindow : Window
         }
         catch (Exception ex)
         {
-            AppLog.Write(Loc.Format("Log.FlyThreadExit", ex.GetType().Name));
+            AppLog.Write(Loc.LogFormat("Log.FlyThreadExit", ex.GetType().Name));
         }
     }
 
@@ -1282,9 +1297,9 @@ public partial class MainWindow : Window
 
         if (frames <= 1 || gapMax <= 12.0) return;
 
-        AppendLog($"[动画] {(_flyShowing ? "弹出" : "收起")}出现掉帧：" +
-                  $"帧数={frames} 间隔均值={gapMean:0.0}ms 最长={gapMax:0.0}ms " +
-                  $"摆位均值={placeMean:0.00}ms 最长={placeMax:0.00}ms");
+        AppendLog($"[anim] {(_flyShowing ? "show" : "hide")} dropped frames: " +
+                  $"frames={frames} gapAvg={gapMean:0.0}ms gapMax={gapMax:0.0}ms " +
+                  $"placeAvg={placeMean:0.00}ms placeMax={placeMax:0.00}ms");
     }
 
     /// <summary>
@@ -1530,6 +1545,103 @@ public partial class MainWindow : Window
 
     // ---------- 状态与日志 ----------
 
+    // ---------- 输出设备（本机 → 耳机 / 音箱） ----------
+
+    /// <summary>
+    /// 重新枚举输出设备。用增量合并而不是整体重建：
+    /// 重建会把 ListBox 的选中项清掉，用户展开的详情会自己收回去，观感很跳。
+    /// </summary>
+    private async Task RefreshOutputsAsync()
+    {
+        if (_outputsLoading) return;
+        _outputsLoading = true;
+        try
+        {
+            var snapshot = await BluetoothOutputService.EnumerateAsync();
+
+            foreach (var device in snapshot)
+            {
+                var existing = _outputs.FirstOrDefault(o =>
+                    string.Equals(o.ContainerId, device.ContainerId, StringComparison.OrdinalIgnoreCase));
+                if (existing is null) _outputs.Add(new OutputDeviceItem(device));
+                else existing.Update(device);
+            }
+
+            for (int i = _outputs.Count - 1; i >= 0; i--)
+            {
+                bool stillThere = snapshot.Any(d =>
+                    string.Equals(d.ContainerId, _outputs[i].ContainerId, StringComparison.OrdinalIgnoreCase));
+                if (!stillThere) _outputs.RemoveAt(i);
+            }
+        }
+        catch (Exception ex)
+        {
+            AppendLogKey("Log.OutputFail", ex.Message);
+        }
+        finally
+        {
+            _outputsLoading = false;
+            UpdateOutputSection();
+        }
+    }
+
+    private void UpdateOutputSection()
+    {
+        OutputEmptyHint.Visibility = _outputs.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+        UpdateSectionCounts();
+    }
+
+    /// <summary>
+    /// 两个分区右上角的「已连接」计数。没连上任何设备时整块隐藏——
+    /// 显示「0 台已连接」只是噪音，用户看到列表本来就是空的。
+    /// </summary>
+    private void UpdateSectionCounts()
+    {
+        int sourceConnected = _devices.Count(device => device.IsConnected);
+        SourceCount.Text = Loc.Format("Ui.Badge.Count", sourceConnected);
+        SourceCount.Visibility = sourceConnected > 0 ? Visibility.Visible : Visibility.Collapsed;
+
+        int outputConnected = _outputs.Count(output => output.IsConnected);
+        OutputCount.Text = Loc.Format("Ui.Badge.Count", outputConnected);
+        OutputCount.Visibility = outputConnected > 0 ? Visibility.Visible : Visibility.Collapsed;
+    }
+
+    /// <summary>
+    /// 连接 / 断开一台输出设备。按钮文字由模型按 <c>IsConnected</c> 现取，
+    /// 这里只负责置忙、调用、回读状态。
+    /// </summary>
+    private async void OnOutputActionClick(object sender, RoutedEventArgs e)
+    {
+        if (sender is not Button { Tag: OutputDeviceItem item }) return;
+        if (item.IsBusy) return;
+
+        bool want = !item.IsConnected;
+        item.IsBusy = true;
+        item.Status = want ? OutputStatus.Connecting : OutputStatus.Disconnecting;
+        AppendLogKey(want ? "Log.OutputConnect" : "Log.OutputDisconnect", item.Name);
+
+        try
+        {
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(25));
+            bool ok = await BluetoothOutputService.SetConnectedAsync(
+                item.ContainerId, want, TimeSpan.FromSeconds(12), cts.Token);
+
+            AppendLogKey(ok ? (want ? "Log.OutputDone" : "Log.OutputOff") : "Log.OutputFail",
+                item.Name);
+            if (!ok) item.Status = OutputStatus.Failed;
+        }
+        catch (Exception ex)
+        {
+            AppendLogKey("Log.OutputFail", ex.Message);
+            item.Status = OutputStatus.Failed;
+        }
+        finally
+        {
+            item.IsBusy = false;
+            await RefreshOutputsAsync();
+        }
+    }
+
     private void RefreshListState()
     {
         var empty = _devices.Count == 0;
@@ -1539,13 +1651,19 @@ public partial class MainWindow : Window
 
     private void UpdateBadge()
     {
+        UpdateSectionCounts();
         var count = _devices.Count(device => device.IsConnected);
-        BadgeText.Text = count > 0
-            ? Loc.Format("Ui.Badge.Count", count)
-            : Loc.Get("Ui.Badge.None");
+        // 标题右侧不再显示连接数（分区标题已有），托盘提示仍需要这个数。
         _app.UpdateTrayState(count);
     }
 
+    /// <summary>
+    /// 写一条日志。
+    ///
+    /// <para><paramref name="message"/> 必须是英文——它会被写进文件，也是贴到 issue 里的原文。
+    /// <paramref name="chinese"/> 只是给人看的：底部那行把它和英文并排显示，
+    /// **不会落盘**。这样界面可以中英双语，日志文件保持纯英文。</para>
+    /// </summary>
     private void AppendLog(string message)
     {
         if (!Dispatcher.CheckAccess())
@@ -1554,13 +1672,25 @@ public partial class MainWindow : Window
             return;
         }
 
+        // 连续重复的同一条不再刷屏（典型来源：一次状态变更会触发两条相同回调）。
+        var now = DateTime.Now;
+        if (message == _lastLogMessage && (now - _lastLogAt).TotalSeconds < 3) return;
+        _lastLogMessage = message;
+        _lastLogAt = now;
+
         // 弹窗日常只露一两句，完整历史写进文件，需要时点「日志」用编辑器打开。
         AppLog.Write(message);
 
-        var stamp = DateTime.Now.ToString("HH:mm:ss");
         LastLogText.Text = message;
-        LastLogText.ToolTip = $"[{stamp}] {message}";
+        LastLogText.ToolTip = $"[{now:HH:mm:ss}] {message}";
     }
+
+    /// <summary>
+    /// 以「文案键」写日志：界面显示「中文 · English」，文件只写英文。
+    /// 所有带本地化的日志都该走这里，别再在外面拼字符串。
+    /// </summary>
+    private void AppendLogKey(string key, params object?[] args) =>
+        AppendLog(Loc.Format(key, args));
 
     /// <summary>
     /// 「日志」按钮：用系统默认的文本编辑器打开日志文件。

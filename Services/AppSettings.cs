@@ -23,6 +23,9 @@ public sealed class AppSettings
     /// </summary>
     public bool AnimationsEnabled { get; set; } = true;
 
+    /// <summary>下次启动是否以管理员身份运行（用于读取 A2DP 编码）。</summary>
+    public bool RunAsAdmin { get; set; }
+
     /// <summary>外观：自动跟随系统 / 浅色 / 深色。</summary>
     public AppTheme Theme { get; set; } = AppTheme.Auto;
 

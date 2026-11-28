@@ -114,6 +114,26 @@
                           Checked="OnAnimationsChanged" Unchecked="OnAnimationsChanged" />
             </Grid>
 
+            <!-- 管理员运行：读取 A2DP 编码需要 SYSTEM 级权限 -->
+            <Grid Margin="10,2,8,2" MinHeight="32">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+
+                <TextBlock Text="{DynamicResource Tray.AdminRun}" FontSize="12.5" VerticalAlignment="Center"
+                           Foreground="{DynamicResource TextPrimaryBrush}" />
+
+                <CheckBox x:Name="AdminToggle" Grid.Column="1" Content=""
+                          Style="{StaticResource ToggleSwitch}"
+                          VerticalAlignment="Center"
+                          Checked="OnAdminChanged" Unchecked="OnAdminChanged" />
+            </Grid>
+
+            <TextBlock Text="{DynamicResource Tray.AdminHint}" FontSize="10.5"
+                       Margin="10,-2,14,4" TextWrapping="Wrap" LineHeight="15"
+                       Foreground="{DynamicResource TextTertiaryBrush}" />
+
             <!-- 语言：跟外观一样用分段选择器，切换后整个界面立刻换文案 -->
             <Grid Margin="10,2,6,2" MinHeight="32">
                 <Grid.ColumnDefinitions>

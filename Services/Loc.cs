@@ -51,6 +51,38 @@ public static class Loc
         ["Ui.RefreshTip"] = "重新查找蓝牙设备",
         ["Ui.Badge.None"] = "未连接",
         ["Ui.Badge.Count"] = "{0} 台已连接",
+        // 输出设备（本机 → 耳机 / 音箱）
+        ["Ui.Section.Source"] = "接收设备",
+        ["Ui.Section.Output"] = "输出设备",
+        ["Ui.Output.Count"] = "{0} 台",
+        ["Ui.Output.Empty"] = "没有已配对的蓝牙耳机或音箱",
+        ["Ui.Output.Connect"] = "连接",
+        ["Ui.Output.Disconnect"] = "断开",
+        ["Ui.Output.Profile"] = "配置文件",
+        ["Ui.Output.Control"] = "控制通道",
+        ["Ui.Output.Id"] = "设备标识",
+        ["Output.UnknownName"] = "蓝牙音频设备",
+        ["Detail.Available"] = "可用",
+        ["Detail.Unavailable"] = "不可用",
+        ["Status.OutDisconnected"] = "未连接",
+        ["Status.OutConnected"] = "已连接",
+        ["Status.OutConnecting"] = "正在连接…",
+        ["Status.OutDisconnecting"] = "正在断开…",
+        ["Status.OutFailed"] = "操作未成功",
+        ["Log.OutputConnect"] = "正在连接输出设备 {0}…",
+        ["Log.OutputDisconnect"] = "正在断开输出设备 {0}…",
+        ["Log.OutputDone"] = "输出设备 {0} 已连接",
+        ["Log.OutputOff"] = "输出设备 {0} 已断开",
+        ["Log.OutputFail"] = "输出设备 {0} 未能达成目标状态",
+        ["Log.CodecDenied"] = "无法读取当前蓝牙编码（需要管理员权限）",
+        ["Log.OutputNotFound"] = "找不到目标输出设备",
+        ["Log.OutputEnumFailed"] = "输出设备枚举失败：{0}",
+        ["Log.OutputDisconnectFailed"] = "断开失败：{0}",
+        ["Log.OutputWakeFallback"] = "控制通道不可用（{0}），改用切默认输出唤醒",
+        ["Log.OutputWakeFailed"] = "唤醒失败：切默认输出与蓝牙服务启用都未成功",
+        ["Log.OutputNoControl"] = "没有可用的控制通道",
+        ["Log.OutputRejected"] = "属性请求被驱动拒绝",
+        ["Log.OutputEnumEndpointsFailed"] = "枚举音频端点失败",
 
         // 设备状态
         ["Status.Disconnected"] = "未连接",
@@ -94,6 +126,8 @@ public static class Loc
         ["Tray.MicaUnsupported"] = "需要 Windows 11",
         ["Tray.Startup"] = "开机自启动",
         ["Tray.Animations"] = "界面动画",
+        ["Tray.AdminRun"] = "以管理员身份运行",
+        ["Tray.AdminHint"] = "用于读取当前蓝牙音频编码（SBC / AAC 等）",
         ["Tray.AnimationsTip"] = "面板滑入滑出。关闭后直接出现、直接消失，不做过渡",
         ["Tray.Exit"] = "退出",
         ["Tray.Language"] = "语言",
@@ -103,8 +137,6 @@ public static class Loc
         // 语言的本名：写进日志时用这个。
         ["Language.Name.Zh"] = "中文",
         ["Language.Name.En"] = "英文",
-        ["Tray.Tip.None"] = "BTAudioSink · 未连接",
-        ["Tray.Tip.Count"] = "BTAudioSink · {0} 台已连接",
 
         // 提示框
         ["Msg.AlreadyRunning"] = "程序已经在运行了，请从托盘图标打开。",
@@ -112,7 +144,7 @@ public static class Loc
 
         // 运行日志
         ["Log.Started"] = "程序已启动，正在枚举已配对的蓝牙设备。",
-        ["Log.MicaAutoDisabled"] = "检测到上次启用 Mica 背景后程序异常退出，本次已自动禁用该背景，以避免窗口渲染异常。",
+        ["Log.MicaAutoDisabled"] = "Mica 上次导致异常退出，本次已禁用。",
         ["Log.AutoReconnectOn"] = "{0}：已启用自动重连，连接断开后将自动重新建立。",
         ["Log.AutoReconnectOff"] = "{0}：已关闭自动重连。",
         ["Log.MicaOn"] = "已启用 Mica 背景。",
@@ -131,25 +163,25 @@ public static class Loc
         ["Log.NoDevice"] = "未发现可用设备，请确认蓝牙已开启且设备已完成配对。",
         ["Log.AutoConnectError"] = "自动连接过程中发生错误：{0}",
         ["Log.AutoSkip"] = "已启用自动连接的设备均已连接或无需处理，本次跳过。",
-        ["Log.AutoStart"] = "{0}：{1} 台设备已启用自动连接，开始检查蓝牙链路状态…",
+        ["Log.AutoStart"] = "{1} 台设备启用自动连接，开始检查。",
         ["Log.AutoReason.Startup"] = "启动时",
         ["Log.LinkNotEstablished"] = "{0}：蓝牙链路未建立，设备尚未连接到本机。",
-        ["Log.WakeAttempt"] = "{0}：蓝牙链路未建立，尝试通过音频连接唤醒设备（{1}/{2}）…",
+        ["Log.WakeAttempt"] = "{0}：链路未建立，唤醒中（{1}/{2}）…",
         ["Log.WakeSuccess"] = "{0}：设备已唤醒，A2DP 音频连接已建立。",
-        ["Log.WakeFailedMax"] = "{0}：唤醒失败，已达到最大尝试次数（{1} 次），暂停自动连接。请先在设备端建立蓝牙连接，或手动点击“连接”。",
+        ["Log.WakeFailedMax"] = "{0}：唤醒失败（已达 {1} 次），暂停自动连接。",
         ["Log.WakeRetry"] = "{0}：本次唤醒未成功，将于 {1:0} 秒后重试。",
         ["Log.LinkEstablished"] = "{0}：蓝牙链路已建立，开始建立 A2DP 音频连接。",
         ["Log.LinkUnknown"] = "{0}：无法确定蓝牙链路状态，将直接尝试建立音频连接。",
         ["Log.AutoAttempt"] = "{0}：自动连接第 {1}/{2} 次…",
         ["Log.AutoSuccess"] = "{0}：自动连接成功。",
-        ["Log.AutoFailedMax"] = "{0}：自动连接连续 {1} 次未成功，暂停自动重试。重新建立蓝牙链路或手动点击“连接”后才会再次尝试。",
+        ["Log.AutoFailedMax"] = "{0}：连续 {1} 次失败，暂停重试。",
         ["Log.AutoConnectErrorDetail"] = "{0}：自动连接出错：{1}",
-        ["Log.DisconnectedSchedule"] = "{0}：连接已断开，将于 2 秒后开始自动重连（最多 {1} 次）…",
+        ["Log.DisconnectedSchedule"] = "{0}：已断开，2 秒后重连（最多 {1} 次）。",
         ["Log.LinkHint"] = "{0}：蓝牙链路未建立，仍将尝试建立音频连接。",
         ["Log.Disconnected"] = "已断开：{0}",
         ["Log.DisconnectFailed"] = "断开 {0} 失败：{1}",
         ["Log.DetailFailed"] = "读取 {0} 详情失败：{1}",
-        ["Log.Refresh"] = "已刷新设备列表，正在重新扫描（已移除 {0} 条未连接记录）。",
+        ["Log.Refresh"] = "已刷新，移除 {0} 条未连接记录。",
         ["Log.RefreshPlain"] = "已刷新设备列表，正在重新扫描。",
         ["Log.ReconnectDisconnecting"] = "重新连接 {0}：先断开现有连接",
         ["Log.Reconnected"] = "已重新连接：{0}",
@@ -158,7 +190,7 @@ public static class Loc
         ["Log.DisconnectAllNone"] = "没有处于连接状态的设备。",
         ["Log.LanguageChanged"] = "界面语言已切换为{0}。",
         ["Log.ErrorDetail"] = "{0}：{1}",
-        ["Log.SessionCreated"] = "连接对象已建立 {0}：obj=0x{1:X8} id={2}",
+        ["Log.SessionCreated"] = "已建立连接对象：{0}",
         ["Log.NoneShort"] = "无",
 
         // 服务层日志
@@ -166,18 +198,18 @@ public static class Loc
         ["Log.ScanHint"] = "请确认蓝牙已打开，且适配器支持 A2DP Sink。",
         ["Log.RefreshWatcher"] = "刷新设备列表：重建 DeviceWatcher",
         ["Log.StopWatcherFailed"] = "停止设备扫描失败：{0}: {1}",
-        ["Log.ConnectSkip"] = "连接 {0} 跳过：已存在连接对象（State={1}），按实际状态同步界面",
+        ["Log.ConnectSkip"] = "{0} 已有连接对象（{1}），跳过。",
         ["Log.StillConnected"] = "{0}：检测到音频连接仍然有效，已同步界面状态。",
-        ["Log.StaleObject"] = "{0}：连接对象仍存在，但状态为 {1}，将释放后重新连接…",
+        ["Log.StaleObject"] = "{0}：对象仍在但状态 {1}，重连。",
         ["Log.ConnectStart"] = "开始连接 {0}",
         ["Log.CreateFailed"] = "创建连接对象失败：{0}",
-        ["Log.NotSupported"] = "该设备不支持音频接收连接（蓝牙适配器或驱动可能不支持 A2DP Sink）。",
+        ["Log.NotSupported"] = "设备不支持音频接收（可能缺少 A2DP Sink）。",
         ["Log.ConnectOk"] = "连接成功 {0}（State={1}）",
         ["Log.ConnectFailed"] = "连接失败 {0}：{1}",
         ["Log.ConnectError"] = "连接时出错 {0}：{1}: {2}",
         ["Log.DisconnectNoSession"] = "断开 {0}：_live 中没有该连接，仅同步界面状态",
         ["Log.UnsubscribeFailed"] = "退订状态回调失败 {0}：{1}: {2}",
-        ["Log.DisconnectTrace"] = "断开 {0}：关闭前={1} 异常={2} 剩余连接={3} 其它设备[{4}] → 关闭后[{5}]",
+        ["Log.DisconnectTrace"] = "断开 {0}：前={1} 异常={2} 剩余={3} 其它[{4}] 后[{5}]",
         ["Log.DisconnectFailedDetail"] = "断开失败 {0}：{1}",
         ["Log.CascadeCheck"] = "联动检查：{0} 状态仍为 Opened，无需恢复",
         ["Log.CascadeRestore"] = "联动恢复：{0} 的连接被系统一并关闭，正在重新打开",
@@ -186,7 +218,7 @@ public static class Loc
         ["Log.FlyThreadExit"] = "面板动画线程退出：{0}",
         ["Log.ReleaseFailed"] = "释放连接失败：{0}: {1}",
         ["Log.StateCallbackReleased"] = "状态回调（连接已由本程序释放，忽略）{0}",
-        ["Log.StateCallbackCascade"] = "状态回调 {0} → {1}（系统联动，暂不更新界面）　其它设备[{2}]",
+        ["Log.StateCallbackCascade"] = "{0} → {1}（系统联动）其它[{2}]",
         ["Log.StateCallback"] = "状态回调 {0} → {1}　其它设备[{2}]",
         ["Log.DeviceRemovedSys"] = "设备已移除（系统通知）：{0}",
         ["Log.ExitStart"] = "退出：开始清理（关闭音频连接、移除托盘图标）",
@@ -233,6 +265,38 @@ public static class Loc
         ["Ui.RefreshTip"] = "Rescan for Bluetooth devices",
         ["Ui.Badge.None"] = "Not connected",
         ["Ui.Badge.Count"] = "{0} connected",
+        // Output devices (this PC -> headphones / speakers)
+        ["Ui.Section.Source"] = "Incoming",
+        ["Ui.Section.Output"] = "Output",
+        ["Ui.Output.Count"] = "{0}",
+        ["Ui.Output.Empty"] = "No paired Bluetooth headphones or speakers",
+        ["Ui.Output.Connect"] = "Connect",
+        ["Ui.Output.Disconnect"] = "Disconnect",
+        ["Ui.Output.Profile"] = "Profiles",
+        ["Ui.Output.Control"] = "Control",
+        ["Ui.Output.Id"] = "Device ID",
+        ["Output.UnknownName"] = "Bluetooth audio device",
+        ["Detail.Available"] = "Available",
+        ["Detail.Unavailable"] = "Unavailable",
+        ["Status.OutDisconnected"] = "Disconnected",
+        ["Status.OutConnected"] = "Connected",
+        ["Status.OutConnecting"] = "Connecting…",
+        ["Status.OutDisconnecting"] = "Disconnecting…",
+        ["Status.OutFailed"] = "Not succeeded",
+        ["Log.OutputConnect"] = "Connecting output device {0}...",
+        ["Log.OutputDisconnect"] = "Disconnecting output device {0}...",
+        ["Log.OutputDone"] = "Output device {0} connected",
+        ["Log.OutputOff"] = "Output device {0} disconnected",
+        ["Log.OutputFail"] = "Output device {0} did not reach the target state",
+        ["Log.CodecDenied"] = "Cannot read the active Bluetooth codec (administrator rights required)",
+        ["Log.OutputNotFound"] = "Output device not found",
+        ["Log.OutputEnumFailed"] = "Output device enumeration failed: {0}",
+        ["Log.OutputDisconnectFailed"] = "Disconnect failed: {0}",
+        ["Log.OutputWakeFallback"] = "KS channel unavailable ({0}); switching default output to wake the device",
+        ["Log.OutputWakeFailed"] = "Wake failed: neither default-output switch nor radio service enable succeeded",
+        ["Log.OutputNoControl"] = "No control channel available",
+        ["Log.OutputRejected"] = "Property request rejected by the driver",
+        ["Log.OutputEnumEndpointsFailed"] = "Failed to enumerate audio endpoints",
 
         // Device status
         ["Status.Disconnected"] = "Not connected",
@@ -276,6 +340,8 @@ public static class Loc
         ["Tray.MicaUnsupported"] = "Requires Windows 11",
         ["Tray.Startup"] = "Start with Windows",
         ["Tray.Animations"] = "Panel animations",
+        ["Tray.AdminRun"] = "Run as administrator",
+        ["Tray.AdminHint"] = "Required to read the active Bluetooth audio codec (SBC / AAC)",
         ["Tray.AnimationsTip"] = "Slide-in and slide-out. When off, the panel appears and disappears instantly",
         ["Tray.Exit"] = "Exit",
         ["Tray.Language"] = "Language",
@@ -285,8 +351,6 @@ public static class Loc
         // The language's own name, as written in the log.
         ["Language.Name.Zh"] = "Chinese",
         ["Language.Name.En"] = "English",
-        ["Tray.Tip.None"] = "BTAudioSink · Not connected",
-        ["Tray.Tip.Count"] = "BTAudioSink · {0} connected",
 
         // Message box
         ["Msg.AlreadyRunning"] = "The app is already running. Open it from the tray icon.",
@@ -294,7 +358,7 @@ public static class Loc
 
         // Runtime log
         ["Log.Started"] = "Started. Enumerating paired Bluetooth devices.",
-        ["Log.MicaAutoDisabled"] = "The previous run ended abnormally while Mica was enabled; Mica has been disabled for this session to avoid rendering problems.",
+        ["Log.MicaAutoDisabled"] = "Mica caused an abnormal exit last run; disabled for this session.",
         ["Log.AutoReconnectOn"] = "{0}: auto-reconnect enabled. The connection will be re-established after a disconnect.",
         ["Log.AutoReconnectOff"] = "{0}: auto-reconnect disabled.",
         ["Log.MicaOn"] = "Mica background enabled.",
@@ -313,25 +377,25 @@ public static class Loc
         ["Log.NoDevice"] = "No usable device found. Make sure Bluetooth is on and the device is paired.",
         ["Log.AutoConnectError"] = "Error during auto-connect: {0}",
         ["Log.AutoSkip"] = "All auto-reconnect devices are already connected or need no action; skipping.",
-        ["Log.AutoStart"] = "{0}: {1} device(s) have auto-reconnect enabled. Checking Bluetooth link state…",
+        ["Log.AutoStart"] = "{1} device(s) auto-reconnect; checking.",
         ["Log.AutoReason.Startup"] = "Startup",
         ["Log.LinkNotEstablished"] = "{0}: the Bluetooth link is not established; the device is not connected to this PC.",
-        ["Log.WakeAttempt"] = "{0}: Bluetooth link not established, trying to wake the device over the audio connection ({1}/{2})…",
+        ["Log.WakeAttempt"] = "{0}: link down, waking ({1}/{2})...",
         ["Log.WakeSuccess"] = "{0}: device woken, A2DP audio connection established.",
-        ["Log.WakeFailedMax"] = "{0}: wake-up failed, the maximum number of attempts ({1}) has been reached; auto-connect is paused. Establish the Bluetooth link on the device, or click Connect manually.",
+        ["Log.WakeFailedMax"] = "{0}: wake failed ({1} attempts), auto-connect paused.",
         ["Log.WakeRetry"] = "{0}: this wake-up attempt did not succeed; retrying in {1:0} second(s).",
         ["Log.LinkEstablished"] = "{0}: Bluetooth link established, starting the A2DP audio connection.",
         ["Log.LinkUnknown"] = "{0}: the Bluetooth link state could not be determined; trying the audio connection directly.",
-        ["Log.AutoAttempt"] = "{0}: auto-connect attempt {1}/{2}…",
+        ["Log.AutoAttempt"] = "{0}: auto-connect attempt {1}/{2}...",
         ["Log.AutoSuccess"] = "{0}: auto-connect succeeded.",
-        ["Log.AutoFailedMax"] = "{0}: auto-connect did not succeed after {1} consecutive attempts; retrying is paused. Re-establish the Bluetooth link or click Connect manually to try again.",
+        ["Log.AutoFailedMax"] = "{0}: {1} consecutive failures, retry paused.",
         ["Log.AutoConnectErrorDetail"] = "{0}: error during auto-connect: {1}",
-        ["Log.DisconnectedSchedule"] = "{0}: the connection dropped; auto-reconnect starts in 2 seconds (up to {1} attempts)…",
+        ["Log.DisconnectedSchedule"] = "{0}: dropped, reconnecting in 2s (max {1}).",
         ["Log.LinkHint"] = "{0}: the Bluetooth link is not established; the audio connection will still be attempted.",
         ["Log.Disconnected"] = "Disconnected: {0}",
         ["Log.DisconnectFailed"] = "Failed to disconnect {0}: {1}",
         ["Log.DetailFailed"] = "Failed to read details for {0}: {1}",
-        ["Log.Refresh"] = "Device list refreshed; rescanning ({0} disconnected entries removed).",
+        ["Log.Refresh"] = "Refreshed; {0} disconnected entries removed.",
         ["Log.RefreshPlain"] = "Device list refreshed; rescanning.",
         ["Log.ReconnectDisconnecting"] = "Reconnecting {0}: dropping the current connection first",
         ["Log.Reconnected"] = "Reconnected: {0}",
@@ -340,7 +404,7 @@ public static class Loc
         ["Log.DisconnectAllNone"] = "No device was connected.",
         ["Log.LanguageChanged"] = "Interface language switched to {0}.",
         ["Log.ErrorDetail"] = "{0}: {1}",
-        ["Log.SessionCreated"] = "Connection object created {0}: obj=0x{1:X8} id={2}",
+        ["Log.SessionCreated"] = "Session created: {0}",
         ["Log.NoneShort"] = "none",
 
         // Service log
@@ -348,18 +412,18 @@ public static class Loc
         ["Log.ScanHint"] = "Make sure Bluetooth is on and the adapter supports the A2DP Sink role.",
         ["Log.RefreshWatcher"] = "Refreshing the device list: rebuilding DeviceWatcher",
         ["Log.StopWatcherFailed"] = "Failed to stop the device scan: {0}: {1}",
-        ["Log.ConnectSkip"] = "Connecting {0} skipped: a connection object already exists (State={1}); the UI is synced to the actual state",
+        ["Log.ConnectSkip"] = "{0} already has a session ({1}), skipped.",
         ["Log.StillConnected"] = "{0}: the audio connection is still valid; the UI state has been corrected.",
-        ["Log.StaleObject"] = "{0}: the connection object still exists but its state is {1}; it will be released and reconnected…",
+        ["Log.StaleObject"] = "{0}: stale session ({1}), reconnecting.",
         ["Log.ConnectStart"] = "Connecting {0}",
         ["Log.CreateFailed"] = "Failed to create the connection object: {0}",
-        ["Log.NotSupported"] = "This device does not support the audio sink role (the Bluetooth adapter or driver may not support A2DP Sink).",
+        ["Log.NotSupported"] = "Device does not support the audio sink role (A2DP Sink missing?).",
         ["Log.ConnectOk"] = "Connected {0} (State={1})",
         ["Log.ConnectFailed"] = "Failed to connect {0}: {1}",
         ["Log.ConnectError"] = "Error while connecting {0}: {1}: {2}",
         ["Log.DisconnectNoSession"] = "Disconnecting {0}: no connection object in _live, only the UI state is synced",
         ["Log.UnsubscribeFailed"] = "Failed to unsubscribe the state callback for {0}: {1}: {2}",
-        ["Log.DisconnectTrace"] = "Disconnecting {0}: before={1} error={2} remaining={3} others[{4}] → after[{5}]",
+        ["Log.DisconnectTrace"] = "Disconnect {0}: before={1} err={2} left={3} others[{4}] after[{5}]",
         ["Log.DisconnectFailedDetail"] = "Failed to disconnect {0}: {1}",
         ["Log.CascadeCheck"] = "Cascade check: {0} is still Opened, nothing to restore",
         ["Log.CascadeRestore"] = "Cascade restore: the connection of {0} was closed by the system together, reopening it",
@@ -368,14 +432,14 @@ public static class Loc
         ["Log.FlyThreadExit"] = "Panel animation thread stopped: {0}",
         ["Log.ReleaseFailed"] = "Failed to release the connection: {0}: {1}",
         ["Log.StateCallbackReleased"] = "State callback (connection already released by this app, ignored) {0}",
-        ["Log.StateCallbackCascade"] = "State callback {0} → {1} (system cascade, UI not updated)　others[{2}]",
-        ["Log.StateCallback"] = "State callback {0} → {1}　others[{2}]",
+        ["Log.StateCallbackCascade"] = "{0} -> {1} (cascade) others[{2}]",
+        ["Log.StateCallback"] = "State callback {0} -> {1} others[{2}]",
         ["Log.DeviceRemovedSys"] = "Device removed (system notification): {0}",
         ["Log.ExitStart"] = "Exiting: cleaning up (closing audio connections, removing the tray icon)",
         ["Log.ExitDone"] = "Exiting: cleanup complete",
         ["Log.ExitFailed"] = "Cleanup failed while exiting: {0}: {1}",
-        ["Log.UiUpdate"] = "UI update: {0} → {1} ({2})",
-        ["Log.Calibrate"] = "Calibrating UI state: {0} {1} → {2}",
+        ["Log.UiUpdate"] = "UI update: {0} -> {1} ({2})",
+        ["Log.Calibrate"] = "Calibrating UI state: {0} {1} -> {2}",
         ["Log.LinkQueryFailed"] = "Bluetooth link query failed: {0}: {1}",
         ["Log.DetailQueryFailed"] = "Failed to read device details: {0}: {1}",
 
@@ -416,6 +480,26 @@ public static class Loc
         catch (FormatException)
         {
             // 占位符和参数对不上时别让程序崩，原样返回模板即可。
+            return template;
+        }
+    }
+
+    /// <summary>
+    /// 日志文案：**恒定取英文**，不随界面语言变化。
+    /// 日志是要贴到 issue 里给别人看的，中英混排或随语言漂移都会让检索变难。
+    /// </summary>
+    public static string LogText(string key) => Get(key);
+
+    /// <summary>日志文案（带占位符），同样恒定英文。</summary>
+    public static string LogFormat(string key, params object?[] args)
+    {
+        var template = LogText(key);
+        try
+        {
+            return string.Format(System.Globalization.CultureInfo.CurrentCulture, template, args);
+        }
+        catch (FormatException)
+        {
             return template;
         }
     }
